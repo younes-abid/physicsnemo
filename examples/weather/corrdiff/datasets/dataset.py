@@ -145,6 +145,7 @@ def init_dataset_from_config(
     seed: int = 0,
     sampler_start_idx: int = 0,
 ) -> Tuple[base.DownscalingDataset, Iterable]:
+    print("DEBUG: dataset_cfg =", dataset_cfg)
     dataset_cfg = copy.deepcopy(dataset_cfg)
     dataset_type = dataset_cfg.pop("type", "cwb")
     if "validation" in dataset_cfg:

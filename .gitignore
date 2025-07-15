@@ -174,3 +174,4 @@ slurm-*.out
 sbatch_logs/
 
 data/
+notebooks/

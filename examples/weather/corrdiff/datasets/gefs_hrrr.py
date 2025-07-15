@@ -210,7 +210,6 @@ class HrrrForecastGEFSDataset(DownscalingDataset):
         Note: This makes the assumption that the lowest numerical year has the
         correct channel ordering for the means
         """
-
         # GEFS surface parsing
         self.ds_gefs_surface = {}
         gefs_surface_paths = glob.glob(
@@ -222,6 +221,7 @@ class HrrrForecastGEFSDataset(DownscalingDataset):
             if "stats" not in x
         ]
         self.gefs_surface_paths = dict(zip(gefs_surface_years, gefs_surface_paths))
+        print("DEBUG: gefs_surface_paths =", self.gefs_surface_paths)  # Add this line
 
         # keep only training or validation years
         years = self.train_years if self.train else self.valid_years
