@@ -13,5 +13,6 @@ docker run -it --rm \
     -v "$(pwd)/scripts:/app/scripts" \
     -v "$(pwd)/notebooks:/app/notebooks" \
     -v "$(pwd)/outputs:/app/outputs" \
+    -v "$(pwd)/outputs/checkpoints_regression:/app/checkpoints_regression" \
     -v "/:/app/host" \
     physiscsnemo:latest

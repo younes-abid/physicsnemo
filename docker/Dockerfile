@@ -60,5 +60,3 @@ EXPOSE 8888
 ENV JUPYTER_ALLOW_INSECURE_WRITES=true
 
 CMD ["/bin/bash"]
-
-#export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
