@@ -8,7 +8,7 @@
 # export WORLD_SIZE=8  # Total number of GPUs
 # export RANK=0        # Rank of the current process
 
-export OMP_NUM_THREADS=12  # Allocate 12 threads per GPU (we have 8 GPUs, and 96 CPUs total)
+export OMP_NUM_THREADS=12  # Allocate 12 threads per GPU (we have 8 GPUs, and 96 CPUs total 96/8=12)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 
