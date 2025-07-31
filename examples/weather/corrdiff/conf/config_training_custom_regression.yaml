@@ -63,7 +63,7 @@ dataset:
     # Path to .nc data file
     stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
     # Path to json stats file
-    input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sst", "sp", "tcwv", "tp"]
+    input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
     output_variables: ["U10", "V10"]
     invariant_variables: []  # Optional: leave empty if not used
 
@@ -73,7 +73,7 @@ training:
         training_duration: 2000000 # Training duration based on the number of processed samples
         total_batch_size: 8
         batch_size_per_gpu: 1 # Set explicitly to avoid "auto" issues
-        lr: 0.0002
+        lr:  0.0002
         grad_clip_threshold: 4 # null # Simulate a larger batch size
         lr_decay: 1
         lr_rampup: 0
