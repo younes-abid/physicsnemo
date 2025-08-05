@@ -17,3 +17,4 @@ h5py==3.14.0
 netcdf4==1.7.2
 matplotlib==3.10.3
 scipy==1.16.0
+jupyter==1.1.1

@@ -37,7 +37,15 @@ RUN for PIP_CONF in "/etc/xdg/pip/pip.conf" "/root/.pip/pip.conf" "/usr/pip.conf
     done
 
 # Copy the repository into the container
-COPY . /app
+#COPY . /app
+
+COPY physicsnemo /app/physicsnemo
+COPY pyproject.toml /app/pyproject.toml
+COPY docker/requirements_docker.txt /app/requirements_docker.txt
+
+COPY scripts /app/scripts
+COPY notebooks /app/notebooks
+
 
 # Set PYTHONPATH to include /app
 ENV PYTHONPATH=/app
@@ -50,7 +58,6 @@ RUN pip install --no-cache-dir -e .
 #RUN pip install "physicsnemo@git+https://github.com/younes-abid/physicsnemo.git@1.1.1-rc"
 
 # Install Python packages
-RUN pip install --upgrade pip
 RUN pip install -r requirements_docker.txt
 RUN pip install jupyter==1.1.1
 # Expose the default Jupyter Notebook port
