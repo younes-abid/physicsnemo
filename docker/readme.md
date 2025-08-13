@@ -7,7 +7,9 @@ bash scripts/run_docker.sh
 bash scripts/example.sh
 ```
 To run the Earth2Studio container, you can use the following command:
-The earth2studio image is built from another repository, you can find it here:https://github.com/younes-abid/earth2studio ```bash scripts/build_docker.sh```
+The earth2studio image is built from another repository, you can find it here:https://github.com/younes-abid/earth2studio 
+```git clone --branch develop https://github.com/younes-abid/earth2studio.git temp_e2s```
+```bash scripts/build_docker.sh```
 
 ```bash
 
