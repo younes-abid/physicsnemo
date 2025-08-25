@@ -59,7 +59,16 @@ defaults:
 # Modify or add below parameters that should be passed as argument to the
 # user-defined dataset class.
 dataset:
-    data_path: ./data/custom_data_1/ERA5_wrf_combined/custom_concat_train.nc
+    data_path: /app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.nc
+    # Path to .nc data file
+    stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
+    # Path to json stats file
+    input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
+    output_variables: ["U10", "V10"]
+    invariant_variables: []  # Optional: leave empty if not used
+
+validation:
+    data_path: /app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_validation.nc
     # Path to .nc data file
     stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
     # Path to json stats file
@@ -90,14 +99,14 @@ training:
         print_progress_freq: 100
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: -1
-        validation_freq: 5000
+        validation_freq: 500
         validation_steps: 10
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "./wandb"
+    results_dir: "/app/wandb_regression"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

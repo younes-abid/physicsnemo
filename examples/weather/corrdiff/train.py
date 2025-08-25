@@ -124,7 +124,11 @@ def main(cfg: DictConfig) -> None:
         config=OmegaConf.to_container(cfg),
         results_dir=cfg.wandb.results_dir,
     )
-
+    logger0.info("-"*80)
+    logger0.info(f"WandB initialized with mode: {cfg.wandb.mode}, results_dir: {cfg.wandb.results_dir}")
+    logger0.info("Full Hydra Configuration:")
+    logger0.info(OmegaConf.to_yaml(cfg))
+    logger0.info("-"*80)
     # Resolve and parse configs
     OmegaConf.resolve(cfg)
     dataset_cfg = OmegaConf.to_container(cfg.dataset)  # TODO needs better handling
@@ -185,7 +189,11 @@ def main(cfg: DictConfig) -> None:
         validation=validation,
         sampler_start_idx=cur_nimg,
     )
-
+    logger0.info("-"*80)
+    logger0.info(f"Training dataset initialized with {len(dataset)} samples.")
+    if validation:
+        logger0.info(f"Validation dataset initialized with {len(validation_dataset)} samples.")
+    logger0.info("-"*80)
     # Parse image configuration & update model args
     dataset_channels = len(dataset.input_channels())
     img_in_channels = dataset_channels
@@ -463,7 +471,9 @@ def main(cfg: DictConfig) -> None:
     ############################################################################
     #                            MAIN TRAINING LOOP                            #
     ############################################################################
-
+    logger0.info("-"*80)
+    logger0.info(f"Model initialized: {cfg.model.name}, on device: {dist.device}")
+    logger0.info("-"*80)
     logger0.info(f"Training for {cfg.training.hp.training_duration} images...")
     done = False
 
@@ -634,6 +644,7 @@ def main(cfg: DictConfig) -> None:
                     done = cur_nimg >= cfg.training.hp.training_duration
 
                 with nvtx.annotate("validation", color="red"):
+                    
                     # Validation
                     if validation_dataset_iterator is not None:
                         valid_loss_accum = 0
@@ -681,9 +692,9 @@ def main(cfg: DictConfig) -> None:
                                         "img_clean": img_clean_valid,
                                         "img_lr": img_lr_valid,
                                         "augment_pipe": None,
-                                        "use_patch_grad_acc": use_patch_grad_acc,
+                                        #"use_patch_grad_acc": use_patch_grad_acc,
                                     }
-                                    if use_patch_grad_acc is not None:
+                                    if use_patch_grad_acc is not None and hasattr(loss_fn, "use_patch_grad_acc"):
                                         loss_valid_kwargs[
                                             "use_patch_grad_acc"
                                         ] = use_patch_grad_acc
@@ -730,6 +741,7 @@ def main(cfg: DictConfig) -> None:
                                     )
                                 average_valid_loss = valid_loss_sum / dist.world_size
                                 if dist.rank == 0:
+                                    logger0.info(f"\033[91maverage_valid_loss {average_valid_loss.item():<7.2f}\033[0m")                                    
                                     writer.add_scalar(
                                         "validation_loss", average_valid_loss, cur_nimg
                                     )

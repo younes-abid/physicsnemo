@@ -92,7 +92,7 @@ training:
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "./wandb"
+    results_dir: "/app/wandb_diffusion"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

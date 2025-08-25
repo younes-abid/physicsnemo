@@ -95,11 +95,11 @@ def write_combined_dataset(output_file, combined_input, combined_output, combine
     print(f"Combined dataset saved to {output_file}")
 
 # Main function to process and combine all files
-def concat(OUT_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, end=-1 ):
+def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, end=-1 ):
     # Get a list of all NetCDF files in the output directory except the output file
-    file_list = sorted([os.path.join(OUT_DIR, f) for f in os.listdir(OUT_DIR) if (f.endswith(".nc")
+    file_list = sorted([os.path.join(IN_DIR, f) for f in os.listdir(IN_DIR) if (f.endswith(".nc")
                                                                                  and f != os.path.basename(OUTPUT_FILE))])
-    print(f"Found {len(file_list)} files to concatenate in {OUT_DIR}.")
+    print(f"Found {len(file_list)} files to concatenate in {IN_DIR}.")
 
     # Initialize lists to store datasets for each group
     input_datasets = []

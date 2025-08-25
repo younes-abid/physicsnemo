@@ -8,6 +8,7 @@ docker run -it --rm \
     --ulimit stack=67108864 \
     --shm-size=8g \
     -p 8888:8888 \
+    -p 6006:6006 \
     -v "$(pwd)/examples:/app/examples" \
     -v "$(pwd)/data:/app/data" \
     -v "$(pwd)/scripts:/app/scripts" \
@@ -15,6 +16,9 @@ docker run -it --rm \
     -v "$(pwd)/outputs:/app/outputs" \
     -v "$(pwd)/outputs/checkpoints_regression:/app/checkpoints_regression" \
     -v "$(pwd)/outputs/checkpoints_diffusion:/app/checkpoints_diffusion" \
+    -v "$(pwd)/outputs/wandb_regression:/app/wandb_regression" \
+    -v "$(pwd)/outputs/wandb_diffusion:/app/wandb_diffusion" \
+    -v "$(pwd)/outputs/tensorboard:/app/tensorboard" \
     physiscsnemo:latest
 
 #     -v "/:/app/host" \

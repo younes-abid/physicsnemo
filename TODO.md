@@ -1,4 +1,92 @@
 
+### **1. Define Additional Metrics**
+
+- Implement functions to compute regression metrics:
+    - **Mean Absolute Error (MAE)**:
+        
+        def compute_mae(predictions, targets):
+        
+        return torch.mean(torch.abs(predictions - targets))
+        
+    - **Mean Squared Error (MSE)**:
+        
+        def compute_mse(predictions, targets):
+        
+        return torch.mean((predictions - targets) ** 2)
+        
+    - **R-squared (R²)**:
+        
+        def compute_r2(predictions, targets):
+        
+        ss_total = torch.sum((targets - torch.mean(targets)) ** 2)
+        
+        ss_residual = torch.sum((targets - predictions) ** 2)
+        
+        return 1 - (ss_residual / ss_total)
+        
+
+---
+
+### **2. Compute Metrics During Validation**
+
+- Modify the validation block to compute these metrics:
+    - After computing loss_valid, also compute `MAE`, `MSE`, and `R²` using the above functions.
+    - Accumulate these metrics over all validation steps.
+
+---
+
+### **3. Log Metrics to TensorBoard**
+
+- Use the SummaryWriter to log the new metrics:
+    
+    writer.add_scalar("validation_mae", average_mae, cur_nimg)
+    
+    writer.add_scalar("validation_mse", average_mse, cur_nimg)
+    
+    writer.add_scalar("validation_r2", average_r2, cur_nimg)
+    
+
+---
+
+### **4. Log Metrics to logger0**
+
+- Add the new metrics to the periodic stats log:
+    
+    logger0.info(f"validation_mae: {average_mae:.4f}")
+    
+    logger0.info(f"validation_mse: {average_mse:.4f}")
+    
+    logger0.info(f"validation_r2: {average_r2:.4f}")
+    
+
+---
+
+### **5. Update the Training Loop**
+
+- Ensure the training loop is updated to compute and log these metrics periodically.
+
+---
+
+### **6. Test the Implementation**
+
+- Verify that the new metrics are being computed correctly.
+- Check that the metrics appear in both TensorBoard and the console logs.
+
+---
+
+### **Deliverables**
+
+1. **Updated Training Code**:
+    - Functions to compute MAE, MSE, and R².
+    - Integration of these metrics into the validation block.
+    - Logging of these metrics to TensorBoard and logger0.
+2. **Verification**:
+    - Ensure the new metrics are visible in TensorBoard.
+    - Confirm the metrics are logged to the console.
+
+---
+
+
 ## Step 2: Generate NetCDF Files or Packages
 - [ ] Identify the script or utility to generate NetCDF files:
   - [ ] Check for `NetCDFWriter` in `physicsnemo.utils.corrdiff.utils`.
