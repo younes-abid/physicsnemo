@@ -482,41 +482,54 @@ def compute_loss_and_predictions(loss_fn, loss_fn_kwargs, patching, patch_num_pe
     loss = loss.sum() / batch_size_per_gpu
     return loss, predictions
 
-def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: str = "") -> dict:
+def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: str = "", 
+                    variables: list = []) -> dict:
     """
     Compute various metrics between predictions and targets.
     
     Args:
-        predictions (torch.Tensor): Predicted values.
-        targets (torch.Tensor): Ground truth values.
-        prefix (str): Prefix for metric names (e.g., "train_", "val_")
+        predictions (torch.Tensor): Predicted values of shape (B, C, H, W).
+        targets (torch.Tensor): Ground truth values of shape (B, C, H, W).
+        prefix (str): Prefix for metric names (e.g., "train_", "val_").
+        variables: List of variable names corresponding to the channels.
         
     Returns:
         dict: Dictionary containing computed metrics.
     """
     metrics = {}
+    thresholds = torch.tensor([0.1, 0.2, 0.5, 1.0], device=predictions.device)
     
-    # Basic regression metrics
-    metrics[f'{prefix}mae'] = torch.mean(torch.abs(predictions - targets))
-    metrics[f'{prefix}mse'] = torch.mean((predictions - targets) ** 2)
-    metrics[f'{prefix}rmse'] = torch.sqrt(metrics[f'{prefix}mse'])
-    
-    # R-squared
-    ss_total = torch.sum((targets - torch.mean(targets)) ** 2)
-    ss_residual = torch.sum((targets - predictions) ** 2)
-    metrics[f'{prefix}r2'] = 1 - (ss_residual / (ss_total + 1e-8))
-    
-    # Relative errors
-    abs_error = torch.abs(predictions - targets)
-    relative_error = abs_error / (torch.abs(targets) + 1e-8)
-    metrics[f'{prefix}relative_error'] = torch.mean(relative_error)
-    metrics[f'{prefix}max_relative_error'] = torch.max(relative_error)
-    
-    # Relative error within thresholds
-    thresholds = [0.1, 0.2, 0.5, 1.0]
-    for threshold in thresholds:
-        within_threshold = (relative_error < threshold).float()
-        metrics[f'{prefix}relative_error_within_{threshold}'] = torch.mean(within_threshold)
+    for i, var in enumerate(variables):
+        p = predictions[:, i, :, :]
+        t = targets[:, i, :, :]
+        
+        # Mask NaNs in targets (if applicable)
+        mask = ~torch.isnan(t)
+        p = p[mask]
+        t = t[mask]
+        
+        # Basic regression metrics
+        metrics[f'{prefix}mae_{var}'] = torch.mean(torch.abs(p - t))
+        metrics[f'{prefix}mse_{var}'] = torch.mean((p - t) ** 2)
+        metrics[f'{prefix}rmse_{var}'] = torch.sqrt(metrics[f'{prefix}mse_{var}'])
+        
+        # R-squared
+        ss_total = torch.sum((t - torch.mean(t)) ** 2)
+        ss_residual = torch.sum((t - p) ** 2)
+        metrics[f'{prefix}r2_{var}'] = 1 - (ss_residual / (ss_total + 1e-8))
+        
+        # Relative errors
+        abs_error = torch.abs(p - t)
+        relative_error = abs_error / (torch.abs(t) + 1e-8)
+        metrics[f'{prefix}relative_error_{var}'] = torch.mean(relative_error)
+        metrics[f'{prefix}max_relative_error_{var}'] = torch.max(relative_error)
+        
+        # Relative error within thresholds
+        within_threshold = (relative_error.unsqueeze(-1) < thresholds).float()
+        for j, threshold in enumerate(thresholds):
+            # Format the threshold to a fixed number of decimal places
+            threshold_str = f"{threshold.item():.1f}"
+            metrics[f'{prefix}relative_error_within_{threshold_str}_{var}'] = torch.mean(within_threshold[..., j])
     
     return metrics
 
@@ -544,7 +557,7 @@ def aggregate_metrics(all_metrics, dist):
 
 def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
                                    use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-                                   batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag=True):
+                                   batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag=True):
     """Accumulate gradients and compute metrics over multiple rounds."""
     loss_accum = 0
     all_metrics = []
@@ -586,7 +599,8 @@ def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_
         with torch.no_grad():
             predictions_cat = torch.cat(all_predictions)
             targets_cat = torch.cat(all_targets)
-            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_")
+            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
+                                      variables=cfg.dataset.output_variables)
     
     return loss_accum, metrics
 
@@ -655,7 +669,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         loss_accum, metrics = accumulate_gradients_and_metrics(
             model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
             use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag
+            batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag
         )
         
         # Aggregate loss across processes
@@ -808,7 +822,8 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                     if all_predictions:
                         predictions_cat = torch.cat(all_predictions)
                         targets_cat = torch.cat(all_targets)
-                        metrics = compute_metrics(predictions_cat, targets_cat, prefix="validation_")
+                        metrics = compute_metrics(predictions_cat, targets_cat, prefix="validation_", 
+                                                  variables=cfg.validation.output_variables)
 
                     # Log validation loss and metrics to TensorBoard
                     if dist.rank == 0:

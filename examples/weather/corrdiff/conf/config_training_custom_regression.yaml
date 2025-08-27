@@ -96,11 +96,11 @@ training:
         num_gpus: -1  # Use all available GPUs
     io:
         regression_checkpoint_path: null
-        print_progress_freq: 100
-        save_checkpoint_freq: 200
+        print_progress_freq: 500
+        save_checkpoint_freq: 5000
         save_n_recent_checkpoints: -1
-        validation_freq: 100
-        validation_steps: 10
+        validation_freq: 500
+        validation_steps: 100
 
 # Parameters for wandb logging
 wandb:
