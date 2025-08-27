@@ -10,6 +10,7 @@ docker run -it --rm \
     -p 8888:8888 \
     -p 6006:6006 \
     -v "$(pwd)/examples:/app/examples" \
+    -v "$(pwd)/physicsnemo:/app/physicsnemo" \
     -v "$(pwd)/data:/app/data" \
     -v "$(pwd)/scripts:/app/scripts" \
     -v "$(pwd)/notebooks:/app/notebooks" \

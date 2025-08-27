@@ -97,9 +97,9 @@ training:
     io:
         regression_checkpoint_path: null
         print_progress_freq: 100
-        save_checkpoint_freq: 5000
+        save_checkpoint_freq: 200
         save_n_recent_checkpoints: -1
-        validation_freq: 500
+        validation_freq: 100
         validation_steps: 10
 
 # Parameters for wandb logging

@@ -410,266 +410,105 @@ def calculate_patch_iterations(cfg, batch_size_per_gpu, logger0) -> list:
     
     return patch_nums_iter
 
+
 ########### main loop functions ###########
-def load_and_prepare_batch(dataset_iterator, use_apex_gn, dist, input_dtype):
-    """Load and prepare a batch of data."""
-    with nvtx.annotate("loading data", color="green"):
-        img_clean, img_lr, *lead_time_label = next(dataset_iterator)
-        
-        if use_apex_gn:
-            img_clean = img_clean.to(
-                dist.device,
-                dtype=input_dtype,
-                non_blocking=True,
-            ).to(memory_format=torch.channels_last)
-            img_lr = img_lr.to(
-                dist.device,
-                dtype=input_dtype,
-                non_blocking=True,
-            ).to(memory_format=torch.channels_last)
-        else:
-            img_clean = (
-                img_clean.to(dist.device)
-                .to(input_dtype)
-                .contiguous()
-            )
-            img_lr = (
-                img_lr.to(dist.device)
-                .to(input_dtype)
-                .contiguous()
-            )
-    
-    return img_clean, img_lr, lead_time_label
-
-def prepare_loss_kwargs(model, img_clean, img_lr, lead_time_label, use_patch_grad_acc, dist, loss_fn):
-    """Prepare keyword arguments for loss function."""
-    loss_fn_kwargs = {
-        "net": model,
-        "img_clean": img_clean,
-        "img_lr": img_lr,
-        "augment_pipe": None,
-    }
-    
-    if use_patch_grad_acc is not None:
-        loss_fn_kwargs["use_patch_grad_acc"] = use_patch_grad_acc
-
-    if lead_time_label:
-        lead_time_label_tensor = lead_time_label[0].to(dist.device).contiguous()
-        loss_fn_kwargs.update({"lead_time_label": lead_time_label_tensor})
-    else:
-        lead_time_label_tensor = None
-        
-    if use_patch_grad_acc:
-        loss_fn.y_mean = None
-
-    return loss_fn_kwargs, lead_time_label_tensor
-
-def compute_loss_and_predictions(loss_fn, loss_fn_kwargs, patching, patch_num_per_iter, 
-                               enable_amp, amp_dtype, batch_size_per_gpu, return_predictions=False):
-    """Compute loss and optionally return predictions for a single patch."""
-    if patching is not None:
-        patching.set_patch_num(patch_num_per_iter)
-        loss_fn_kwargs.update({"patching": patching})
-    
-    with nvtx.annotate(f"loss forward", color="green"):
-        with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
-            if return_predictions:
-                loss, predictions = loss_fn(**loss_fn_kwargs, return_predictions=True)
-            else:
-                loss = loss_fn(**loss_fn_kwargs)
-                predictions = None
-
-    loss = loss.sum() / batch_size_per_gpu
-    return loss, predictions
-
-def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: str = "") -> dict:
-    """
-    Compute various metrics between predictions and targets.
-    
-    Args:
-        predictions (torch.Tensor): Predicted values.
-        targets (torch.Tensor): Ground truth values.
-        prefix (str): Prefix for metric names (e.g., "train_", "val_")
-        
-    Returns:
-        dict: Dictionary containing computed metrics.
-    """
-    metrics = {}
-    
-    # Basic regression metrics
-    metrics[f'{prefix}mae'] = torch.mean(torch.abs(predictions - targets))
-    metrics[f'{prefix}mse'] = torch.mean((predictions - targets) ** 2)
-    metrics[f'{prefix}rmse'] = torch.sqrt(metrics[f'{prefix}mse'])
-    
-    # R-squared
-    ss_total = torch.sum((targets - torch.mean(targets)) ** 2)
-    ss_residual = torch.sum((targets - predictions) ** 2)
-    metrics[f'{prefix}r2'] = 1 - (ss_residual / (ss_total + 1e-8))
-    
-    # Relative errors
-    abs_error = torch.abs(predictions - targets)
-    relative_error = abs_error / (torch.abs(targets) + 1e-8)
-    metrics[f'{prefix}relative_error'] = torch.mean(relative_error)
-    metrics[f'{prefix}max_relative_error'] = torch.max(relative_error)
-    
-    # Relative error within thresholds
-    thresholds = [0.1, 0.2, 0.5, 1.0]
-    for threshold in thresholds:
-        within_threshold = (relative_error < threshold).float()
-        metrics[f'{prefix}relative_error_within_{threshold}'] = torch.mean(within_threshold)
-    
-    return metrics
-
-def aggregate_metrics(all_metrics, dist):
-    """Aggregate metrics across all distributed processes."""
-    aggregated_metrics = {}
-    
-    for metric_batch in all_metrics:
-        for metric_name, metric_value in metric_batch.items():
-            if metric_name not in aggregated_metrics:
-                aggregated_metrics[metric_name] = []
-            aggregated_metrics[metric_name].append(metric_value)
-    
-    # Average metrics across batches
-    final_metrics = {}
-    for metric_name, metric_values in aggregated_metrics.items():
-        if metric_values:  # Check if list is not empty
-            metric_tensor = torch.tensor(metric_values, device=dist.device)
-            if dist.world_size > 1:
-                torch.distributed.all_reduce(metric_tensor, op=torch.distributed.ReduceOp.SUM)
-                metric_tensor /= dist.world_size
-            final_metrics[metric_name] = metric_tensor.mean().item()
-    
-    return final_metrics
-
-def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
-                                   use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-                                   batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag=True):
-    """Accumulate gradients and compute metrics over multiple rounds."""
-    loss_accum = 0
-    all_metrics = []
-    all_predictions = []
-    all_targets = []
-    
-    for n_i in range(num_accumulation_rounds):
-        with nvtx.annotate(f"accumulation round {n_i}", color="Magenta"):
-            # Load and prepare batch
-            img_clean, img_lr, lead_time_label = load_and_prepare_batch(
-                dataset_iterator, use_apex_gn, dist, input_dtype
-            )
-            
-            # Prepare loss function arguments
-            loss_fn_kwargs, _ = prepare_loss_kwargs(
-                model, img_clean, img_lr, lead_time_label, use_patch_grad_acc, dist, loss_fn
-            )
-            
-            # Compute loss for each patch
-            for patch_num_per_iter in patch_nums_iter:
-                loss, predictions = compute_loss_and_predictions(
-                    loss_fn, loss_fn_kwargs, patching, patch_num_per_iter,
-                    enable_amp, amp_dtype, batch_size_per_gpu, return_predictions=compute_metrics_flag
-                )
-                
-                loss_accum += loss / num_accumulation_rounds / len(patch_nums_iter)
-                
-                # Store predictions and targets for metric computation
-                if compute_metrics_flag and predictions is not None:
-                    all_predictions.append(predictions.detach())
-                    all_targets.append(img_clean.detach())
-                
-                with nvtx.annotate(f"loss backward", color="yellow"):
-                    loss.backward()
-    
-    # Compute metrics if requested
-    metrics = {}
-    if compute_metrics_flag and all_predictions:
-        with torch.no_grad():
-            predictions_cat = torch.cat(all_predictions)
-            targets_cat = torch.cat(all_targets)
-            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_")
-    
-    return loss_accum, metrics
-
-def aggregate_loss(loss_accum, dist):
-    """Aggregate loss across all distributed processes."""
-    with nvtx.annotate(f"loss aggregate", color="green"):
-        loss_sum = torch.tensor([loss_accum], device=dist.device)
-        if dist.world_size > 1:
-            torch.distributed.barrier()
-            torch.distributed.all_reduce(
-                loss_sum, op=torch.distributed.ReduceOp.SUM
-            )
-        average_loss = (loss_sum / dist.world_size).cpu().item()
-    
-    return average_loss
-
-def update_learning_rates(optimizer, cfg, cur_nimg, dist, writer):
-    """Update learning rates based on schedule."""
-    lr_rampup = cfg.training.hp.lr_rampup
-    current_lr = None
-    
-    for g in optimizer.param_groups:
-        if lr_rampup > 0:
-            g["lr"] = cfg.training.hp.lr * min(cur_nimg / lr_rampup, 1)
-        if cur_nimg >= lr_rampup:
-            g["lr"] *= cfg.training.hp.lr_decay ** (
-                (cur_nimg - lr_rampup) // cfg.training.hp.lr_decay_rate
-            )
-        current_lr = g["lr"]
-        if dist.rank == 0:
-            writer.add_scalar("learning_rate", current_lr, cur_nimg)
-    
-    return current_lr
-
-def update_running_loss(average_loss, average_loss_running_mean, n_average_loss_running_mean):
-    """Update running mean of average loss."""
-    average_loss_running_mean += (
-        average_loss - average_loss_running_mean
-    ) / n_average_loss_running_mean
-    n_average_loss_running_mean += 1
-    
-    return average_loss_running_mean, n_average_loss_running_mean
-
-def log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics=None):
-    """Log training metrics to tensorboard."""
-    if dist.rank == 0:
-        writer.add_scalar("training_loss", average_loss, cur_nimg)
-        writer.add_scalar("training_loss_running_mean", average_loss_running_mean, cur_nimg)
-        
-        # Log additional metrics if available
-        if metrics:
-            for metric_name, metric_value in metrics.items():
-                writer.add_scalar(metric_name, metric_value, cur_nimg)
-
 def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, input_dtype,
                            model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
                            enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
                            average_loss_running_mean, n_average_loss_running_mean,
-                           optimizer, cur_nimg, done, compute_metrics=True):
-    """Refactored training iteration block with metrics computation."""
+                           optimizer, cur_nimg, done):
+    """Refactored training iteration block."""
     with nvtx.annotate("Training iteration", color="green"):
-        # Reset gradients
+        # Compute & accumulate gradients
         optimizer.zero_grad(set_to_none=True)
-        
-        # Accumulate gradients and compute metrics
-        loss_accum, metrics = accumulate_gradients_and_metrics(
-            model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
-            use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag=compute_metrics
-        )
-        
-        # Aggregate loss across processes
-        average_loss = aggregate_loss(loss_accum, dist)
-        
-        # Update running loss statistics
-        average_loss_running_mean, n_average_loss_running_mean = update_running_loss(
-            average_loss, average_loss_running_mean, n_average_loss_running_mean
-        )
-        
-        # Log metrics
-        log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics)
-        
-        # Check for periodic tasks
+        loss_accum = 0
+        for n_i in range(num_accumulation_rounds):
+            with nvtx.annotate(f"accumulation round {n_i}", color="Magenta"):
+                with nvtx.annotate("loading data", color="green"):
+                    img_clean, img_lr, *lead_time_label = next(dataset_iterator)
+                    if use_apex_gn:
+                        img_clean = img_clean.to(
+                            dist.device,
+                            dtype=input_dtype,
+                            non_blocking=True,
+                        ).to(memory_format=torch.channels_last)
+                        img_lr = img_lr.to(
+                            dist.device,
+                            dtype=input_dtype,
+                            non_blocking=True,
+                        ).to(memory_format=torch.channels_last)
+                    else:
+                        img_clean = (
+                            img_clean.to(dist.device)
+                            .to(input_dtype)
+                            .contiguous()
+                        )
+                        img_lr = (
+                            img_lr.to(dist.device)
+                            .to(input_dtype)
+                            .contiguous()
+                        )
+                loss_fn_kwargs = {
+                    "net": model,
+                    "img_clean": img_clean,
+                    "img_lr": img_lr,
+                    "augment_pipe": None,
+                }
+                if use_patch_grad_acc is not None:
+                    loss_fn_kwargs["use_patch_grad_acc"] = use_patch_grad_acc
+
+                if lead_time_label:
+                    lead_time_label = (
+                        lead_time_label[0].to(dist.device).contiguous()
+                    )
+                    loss_fn_kwargs.update({"lead_time_label": lead_time_label})
+                else:
+                    lead_time_label = None
+                if use_patch_grad_acc:
+                    loss_fn.y_mean = None
+
+                for patch_num_per_iter in patch_nums_iter:
+                    if patching is not None:
+                        patching.set_patch_num(patch_num_per_iter)
+                        loss_fn_kwargs.update({"patching": patching})
+                    with nvtx.annotate(f"loss forward", color="green"):
+                        with torch.autocast(
+                            "cuda", dtype=amp_dtype, enabled=enable_amp
+                        ):
+                            loss = loss_fn(**loss_fn_kwargs)
+
+                    loss = loss.sum() / batch_size_per_gpu
+                    loss_accum += (
+                        loss
+                        / num_accumulation_rounds
+                        / len(patch_nums_iter)
+                    )
+                    with nvtx.annotate(f"loss backward", color="yellow"):
+                        loss.backward()
+
+        with nvtx.annotate(f"loss aggregate", color="green"):
+            loss_sum = torch.tensor([loss_accum], device=dist.device)
+            if dist.world_size > 1:
+                torch.distributed.barrier()
+                torch.distributed.all_reduce(
+                    loss_sum, op=torch.distributed.ReduceOp.SUM
+                )
+            average_loss = (loss_sum / dist.world_size).cpu().item()
+
+        # update running mean of average loss since last periodic task
+        average_loss_running_mean += (
+            average_loss - average_loss_running_mean
+        ) / n_average_loss_running_mean
+        n_average_loss_running_mean += 1
+
+        if dist.rank == 0:
+            writer.add_scalar("training_loss", average_loss, cur_nimg)
+            writer.add_scalar(
+                "training_loss_running_mean",
+                average_loss_running_mean,
+                cur_nimg,
+            )
+
         ptt = is_time_for_periodic_task(
             cur_nimg,
             cfg.training.io.print_progress_freq,
@@ -679,25 +518,34 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
             rank_0_only=True,
         )
         if ptt:
+            # reset running mean of average loss
             average_loss_running_mean = 0
             n_average_loss_running_mean = 1
-        
-        # Update weights
+
+        # Update weights.
         with nvtx.annotate("update weights", color="blue"):
-            current_lr = update_learning_rates(optimizer, cfg, cur_nimg, dist, writer)
+            lr_rampup = cfg.training.hp.lr_rampup
+            for g in optimizer.param_groups:
+                if lr_rampup > 0:
+                    g["lr"] = cfg.training.hp.lr * min(cur_nimg / lr_rampup, 1)
+                if cur_nimg >= lr_rampup:
+                    g["lr"] *= cfg.training.hp.lr_decay ** (
+                        (cur_nimg - lr_rampup) // cfg.training.hp.lr_decay_rate
+                    )
+                current_lr = g["lr"]
+                if dist.rank == 0:
+                    writer.add_scalar("learning_rate", current_lr, cur_nimg)
             handle_and_clip_gradients(
                 model,
                 grad_clip_threshold=cfg.training.hp.grad_clip_threshold,
             )
-        
         with nvtx.annotate("optimizer step", color="blue"):
             optimizer.step()
-        
-        # Update iteration counters
+
         cur_nimg += cfg.training.hp.total_batch_size
         done = cur_nimg >= cfg.training.hp.training_duration
 
-    return average_loss, average_loss_running_mean, n_average_loss_running_mean, current_lr, cur_nimg, done, metrics
+    return average_loss, average_loss_running_mean, n_average_loss_running_mean, current_lr, cur_nimg, done
 
 def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, use_apex_gn,
                     model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
@@ -796,7 +644,7 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                         writer.add_scalar("validation_loss", average_valid_loss, cur_nimg)
 
 def log_progress_block(cur_nimg, average_loss, average_loss_running_mean, current_lr,
-                      start_time, tick_start_time, tick_start_nimg, dist, logger0, metrics):
+                      start_time, tick_start_time, tick_start_nimg, dist, logger0):
     """Refactored log progress block."""
     tick_end_time = time.time()
     fields = []
@@ -808,9 +656,6 @@ def log_progress_block(cur_nimg, average_loss, average_loss_running_mean, curren
     fields += [f"sec_per_tick {(tick_end_time - tick_start_time):<7.1f}"]
     fields += [f"sec_per_sample {((tick_end_time - tick_start_time) / (cur_nimg - tick_start_nimg)):<7.2f}"]
     fields += [f"cpu_mem_gb {(psutil.Process(os.getpid()).memory_info().rss / 2**30):<6.2f}"]
-    if metrics:
-        for metric_name, metric_value in metrics.items():
-            fields += [f"{metric_name} {metric_value:<7.2f}"]
     
     if torch.cuda.is_available():
         fields += [f"peak_gpu_mem_gb {(torch.cuda.max_memory_allocated(dist.device) / 2**30):<6.2f}"]
@@ -1016,12 +861,12 @@ def main(cfg: DictConfig) -> None:
                     cuda_profiler_stop()
 
                 # Training iteration block
-                average_loss, average_loss_running_mean, n_average_loss_running_mean, current_lr, cur_nimg, done, metrics = training_iteration_block(
-                cfg, dist, writer, dataset_iterator, use_apex_gn, input_dtype,
-                model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
-                enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
-                average_loss_running_mean, n_average_loss_running_mean,
-                optimizer, cur_nimg, done, compute_metrics=True
+                average_loss, average_loss_running_mean, n_average_loss_running_mean, current_lr, cur_nimg, done = training_iteration_block(
+                    cfg, dist, writer, dataset_iterator, use_apex_gn, input_dtype,
+                    model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
+                    enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
+                    average_loss_running_mean, n_average_loss_running_mean,
+                    optimizer, cur_nimg, done
                 )
 
                 # Validation block
@@ -1042,7 +887,7 @@ def main(cfg: DictConfig) -> None:
                 ):
                     log_progress_block(
                         cur_nimg, average_loss, average_loss_running_mean, current_lr,
-                        start_time, tick_start_time, tick_start_nimg, dist, logger0, metrics
+                        start_time, tick_start_time, tick_start_nimg, dist, logger0
                     )
 
                 # Checkpoint block

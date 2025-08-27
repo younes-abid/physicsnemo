@@ -383,6 +383,7 @@ class RegressionLoss:
             Callable[[torch.Tensor], Tuple[torch.Tensor, Optional[torch.Tensor]]]
         ] = None,
         lead_time_label: Optional[torch.Tensor] = None,
+        return_predictions=False
     ) -> torch.Tensor:
         """
         Calculate and return the regression loss for
@@ -465,6 +466,8 @@ class RegressionLoss:
 
         loss = weight * ((D_yn - y) ** 2)
 
+        if return_predictions:
+            return loss, D_yn
         return loss
 
 
