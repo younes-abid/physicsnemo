@@ -645,7 +645,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
                            model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
                            enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
                            average_loss_running_mean, n_average_loss_running_mean,
-                           optimizer, cur_nimg, done, compute_metrics=True):
+                           optimizer, cur_nimg, done, compute_metrics_flag=True):
     """Refactored training iteration block with metrics computation."""
     with nvtx.annotate("Training iteration", color="green"):
         # Reset gradients
@@ -655,7 +655,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         loss_accum, metrics = accumulate_gradients_and_metrics(
             model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
             use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag=compute_metrics
+            batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag
         )
         
         # Aggregate loss across processes
@@ -700,13 +700,16 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
     return average_loss, average_loss_running_mean, n_average_loss_running_mean, current_lr, cur_nimg, done, metrics
 
 def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, use_apex_gn,
-                    model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
-                    enable_amp, amp_dtype, batch_size_per_gpu, cur_nimg, done):
-    """Refactored validation block."""
+                     model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
+                     enable_amp, amp_dtype, batch_size_per_gpu, cur_nimg, done, compute_metrics_flag=True):
+    """Refactored validation block with metrics computation and logging."""
     with nvtx.annotate("validation", color="red"):
         # Validation
         if validation_dataset_iterator is not None:
             valid_loss_accum = 0
+            all_predictions = []
+            all_targets = []
+
             if is_time_for_periodic_task(
                 cur_nimg,
                 cfg.training.io.validation_freq,
@@ -770,7 +773,9 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                             with torch.autocast(
                                 "cuda", dtype=amp_dtype, enabled=enable_amp
                             ):
-                                loss_valid = loss_fn(**loss_valid_kwargs)
+                                loss_valid, predictions = loss_fn(
+                                    **loss_valid_kwargs, return_predictions=compute_metrics_flag
+                                )
 
                             loss_valid = (
                                 (loss_valid.sum() / batch_size_per_gpu)
@@ -781,6 +786,12 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                                 loss_valid
                                 / cfg.training.io.validation_steps
                             )
+
+                            # Store predictions and targets for metrics computation
+                            all_predictions.append(predictions.detach())
+                            all_targets.append(img_clean_valid.detach())
+
+                    # Aggregate validation loss across processes
                     valid_loss_sum = torch.tensor(
                         [valid_loss_accum], device=dist.device
                     )
@@ -791,9 +802,26 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                             op=torch.distributed.ReduceOp.SUM,
                         )
                     average_valid_loss = valid_loss_sum / dist.world_size
+
+                    # Compute validation metrics
+                    metrics = {}
+                    if all_predictions:
+                        predictions_cat = torch.cat(all_predictions)
+                        targets_cat = torch.cat(all_targets)
+                        metrics = compute_metrics(predictions_cat, targets_cat, prefix="validation_")
+
+                    # Log validation loss and metrics to TensorBoard
                     if dist.rank == 0:
-                        logger0.info(f"\033[91maverage_valid_loss {average_valid_loss.item():<7.2f}\033[0m")                                    
                         writer.add_scalar("validation_loss", average_valid_loss, cur_nimg)
+                        for metric_name, metric_value in metrics.items():
+                            writer.add_scalar(metric_name, metric_value, cur_nimg)
+
+                        # Log validation loss and metrics to the terminal
+                        fields = [f"validation_loss {average_valid_loss.item():<7.2f}"]
+                        for metric_name, metric_value in metrics.items():
+                            fields += [f"{metric_name} {metric_value:<7.2f}"]
+                        joined_fields = " ".join(fields)
+                        logger0.info(f"\033[91m{joined_fields}\033[0m")
 
 def log_progress_block(cur_nimg, average_loss, average_loss_running_mean, current_lr,
                       start_time, tick_start_time, tick_start_nimg, dist, logger0, metrics):
@@ -1021,14 +1049,14 @@ def main(cfg: DictConfig) -> None:
                 model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
                 enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
                 average_loss_running_mean, n_average_loss_running_mean,
-                optimizer, cur_nimg, done, compute_metrics=True
+                optimizer, cur_nimg, done, compute_metrics_flag=True
                 )
 
                 # Validation block
                 validation_block(
                     cfg, dist, writer, logger0, validation_dataset_iterator, use_apex_gn,
                     model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
-                    enable_amp, amp_dtype, batch_size_per_gpu, cur_nimg, done
+                    enable_amp, amp_dtype, batch_size_per_gpu, cur_nimg, done, compute_metrics_flag=True
                 )
 
                 # Log progress
