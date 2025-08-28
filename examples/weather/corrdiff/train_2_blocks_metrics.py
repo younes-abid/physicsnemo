@@ -61,6 +61,7 @@ torch._dynamo.config.verbose = True  # Enable verbose logging
 torch._dynamo.config.suppress_errors = False  # Forces the error to show all details
 torch._logging.set_logs(recompiles=True, graph_breaks=True)
 
+import torchvision.utils as vutils
 
 def checkpoint_list(path, suffix=".mdlus"):
     """Helper function to return sorted list, in ascending order, of checkpoints in a path"""
@@ -482,43 +483,84 @@ def compute_loss_and_predictions(loss_fn, loss_fn_kwargs, patching, patch_num_pe
     loss = loss.sum() / batch_size_per_gpu
     return loss, predictions
 
-def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: str = "") -> dict:
+def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: str = "", 
+                    variables: list = []) -> dict:
     """
     Compute various metrics between predictions and targets.
     
     Args:
-        predictions (torch.Tensor): Predicted values.
-        targets (torch.Tensor): Ground truth values.
-        prefix (str): Prefix for metric names (e.g., "train_", "val_")
+        predictions (torch.Tensor): Predicted values of shape (B, C, H, W).
+        targets (torch.Tensor): Ground truth values of shape (B, C, H, W).
+        prefix (str): Prefix for metric names (e.g., "train_", "val_").
+        variables: List of variable names corresponding to the channels.
         
     Returns:
         dict: Dictionary containing computed metrics.
     """
     metrics = {}
+    thresholds = torch.tensor([0.1, 0.2, 0.5, 1.0], device=predictions.device)
     
-    # Basic regression metrics
-    metrics[f'{prefix}mae'] = torch.mean(torch.abs(predictions - targets))
-    metrics[f'{prefix}mse'] = torch.mean((predictions - targets) ** 2)
-    metrics[f'{prefix}rmse'] = torch.sqrt(metrics[f'{prefix}mse'])
-    
-    # R-squared
-    ss_total = torch.sum((targets - torch.mean(targets)) ** 2)
-    ss_residual = torch.sum((targets - predictions) ** 2)
-    metrics[f'{prefix}r2'] = 1 - (ss_residual / (ss_total + 1e-8))
-    
-    # Relative errors
-    abs_error = torch.abs(predictions - targets)
-    relative_error = abs_error / (torch.abs(targets) + 1e-8)
-    metrics[f'{prefix}relative_error'] = torch.mean(relative_error)
-    metrics[f'{prefix}max_relative_error'] = torch.max(relative_error)
-    
-    # Relative error within thresholds
-    thresholds = [0.1, 0.2, 0.5, 1.0]
-    for threshold in thresholds:
-        within_threshold = (relative_error < threshold).float()
-        metrics[f'{prefix}relative_error_within_{threshold}'] = torch.mean(within_threshold)
+    for i, var in enumerate(variables):
+        p = predictions[:, i, :, :]
+        t = targets[:, i, :, :]
+        
+        # Mask NaNs in targets (if applicable)
+        mask = ~torch.isnan(t)
+        p = p[mask]
+        t = t[mask]
+        
+        # Basic regression metrics
+        metrics[f'{prefix}mae_{var}'] = torch.mean(torch.abs(p - t))
+        metrics[f'{prefix}mse_{var}'] = torch.mean((p - t) ** 2)
+        metrics[f'{prefix}rmse_{var}'] = torch.sqrt(metrics[f'{prefix}mse_{var}'])
+        
+        # R-squared
+        ss_total = torch.sum((t - torch.mean(t)) ** 2)
+        ss_residual = torch.sum((t - p) ** 2)
+        metrics[f'{prefix}r2_{var}'] = 1 - (ss_residual / (ss_total + 1e-8))
+        
+        # Relative errors
+        abs_error = torch.abs(p - t)
+        relative_error = abs_error / (torch.abs(t) + 1e-8)
+        metrics[f'{prefix}relative_error_{var}'] = torch.mean(relative_error)
+        metrics[f'{prefix}max_relative_error_{var}'] = torch.max(relative_error)
+        
+        # Relative error within thresholds
+        within_threshold = (relative_error.unsqueeze(-1) < thresholds).float()
+        for j, threshold in enumerate(thresholds):
+            # Format the threshold to a fixed number of decimal places
+            threshold_str = f"{threshold.item():.1f}"
+            metrics[f'{prefix}relative_error_within_{threshold_str}_{var}'] = torch.mean(within_threshold[..., j])
     
     return metrics
+
+def prepare_images(predictions_cat: torch.Tensor, targets_cat: torch.Tensor, prefix: str, 
+                   variables: list, n: int = 1) -> dict:
+    """
+    Prepare images for logging to TensorBoard.
+
+    Args:
+        predictions_cat (torch.Tensor): Concatenated predicted values of shape (B, C, H, W).
+        targets_cat (torch.Tensor): Concatenated ground truth values of shape (B, C, H, W).
+        prefix (str): Prefix for logging (e.g., "training_", "validation_").
+        variables (list): List of variable names corresponding to the channels.
+        n (int): Number of images to prepare (default: 1).
+
+    Returns:
+        dict: Dictionary containing titles as keys and lists of images as values.
+    """
+    images = {}
+    predictions = predictions_cat[:n]
+    targets = targets_cat[:n]
+
+    for i, var in enumerate(variables):
+        pred = predictions[:, i, :, :].unsqueeze(1)  # Shape: (n, 1, H, W)
+        target = targets[:, i, :, :].unsqueeze(1)    # Shape: (n, 1, H, W)
+
+        # Return as a list of two images (predictions and targets)
+        images[f"{prefix}{var}_pred_vs_target"] = [pred, target]
+
+    return images
 
 def aggregate_metrics(all_metrics, dist):
     """Aggregate metrics across all distributed processes."""
@@ -544,7 +586,7 @@ def aggregate_metrics(all_metrics, dist):
 
 def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
                                    use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-                                   batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag=True):
+                                   batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag=True):
     """Accumulate gradients and compute metrics over multiple rounds."""
     loss_accum = 0
     all_metrics = []
@@ -582,13 +624,21 @@ def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_
     
     # Compute metrics if requested
     metrics = {}
+    images = {}
     if compute_metrics_flag and all_predictions:
         with torch.no_grad():
             predictions_cat = torch.cat(all_predictions)
             targets_cat = torch.cat(all_targets)
-            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_")
+            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
+                                      variables=cfg.dataset.output_variables)
+            images = prepare_images(predictions_cat=predictions_cat,
+            targets_cat=targets_cat,
+            prefix="training_",
+            variables=cfg.dataset.output_variables,
+            n=1
+        )
     
-    return loss_accum, metrics
+    return loss_accum, metrics, images
 
 def aggregate_loss(loss_accum, dist):
     """Aggregate loss across all distributed processes."""
@@ -640,6 +690,22 @@ def log_training_metrics(writer, average_loss, average_loss_running_mean, cur_ni
         if metrics:
             for metric_name, metric_value in metrics.items():
                 writer.add_scalar(metric_name, metric_value, cur_nimg)
+                
+def log_images(writer, cur_nimg, dist, images):
+    """Log images to TensorBoard with clear separation between predictions and targets."""
+    if dist.rank == 0:
+        for title, image_list in images.items():
+            # Add a black separator between images
+            pred, target = image_list
+            separator = torch.zeros_like(pred)  # Create a black separator with the same shape as the images
+            separator_width = max(1, pred.shape[3] // 100)
+            separator = separator[:, :, :, :separator_width]  # Make the separator 3 pixel wide
+
+            # Concatenate predictions, separator, and targets
+            pred_vs_target = torch.cat([pred, separator, target, separator, pred - target], dim=3)  
+
+            # Log the concatenated image to TensorBoard
+            writer.add_image(title, pred_vs_target[0], global_step=cur_nimg)  # Log the first image in the batch        
 
 def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, input_dtype,
                            model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
@@ -652,10 +718,10 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         optimizer.zero_grad(set_to_none=True)
         
         # Accumulate gradients and compute metrics
-        loss_accum, metrics = accumulate_gradients_and_metrics(
+        loss_accum, metrics, images = accumulate_gradients_and_metrics(
             model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
             use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, compute_metrics_flag
+            batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag
         )
         
         # Aggregate loss across processes
@@ -668,6 +734,9 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         
         # Log metrics
         log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics)
+        
+        #Log images
+        log_images(writer, cur_nimg, dist, images)
         
         # Check for periodic tasks
         ptt = is_time_for_periodic_task(
@@ -808,10 +877,20 @@ def validation_block(cfg, dist, writer, logger0, validation_dataset_iterator, us
                     if all_predictions:
                         predictions_cat = torch.cat(all_predictions)
                         targets_cat = torch.cat(all_targets)
-                        metrics = compute_metrics(predictions_cat, targets_cat, prefix="validation_")
-
-                    # Log validation loss and metrics to TensorBoard
+                        metrics = compute_metrics(predictions_cat, targets_cat, prefix="validation_", 
+                                                  variables=cfg.validation.output_variables)
+                        images = prepare_images(predictions_cat=predictions_cat,
+                                targets_cat=targets_cat,
+                                prefix="validation_",
+                                variables=cfg.validation.output_variables,
+                                n=1
+                            )
+                    
                     if dist.rank == 0:
+                        # Log images to Tensorboard
+                        log_images(writer, cur_nimg, dist, images)
+                        
+                        # Log validation loss and metrics to TensorBoard
                         writer.add_scalar("validation_loss", average_valid_loss, cur_nimg)
                         for metric_name, metric_value in metrics.items():
                             writer.add_scalar(metric_name, metric_value, cur_nimg)
