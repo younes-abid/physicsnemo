@@ -736,7 +736,8 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics)
         
         #Log images
-        log_images(writer, cur_nimg, dist, images)
+        if cur_nimg % cfg.training.io.image_log_freq == 0 and images:
+            log_images(writer, cur_nimg, dist, images)
         
         # Check for periodic tasks
         ptt = is_time_for_periodic_task(

@@ -89,6 +89,8 @@ training:
         lr_decay_rate: 500000.0
     perf:
         fp_optimizations: amp-bf16
+        # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
+        # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
         dataloader_workers: 4
         songunet_checkpoint_level: 0
 
@@ -97,6 +99,7 @@ training:
     io:
         regression_checkpoint_path: null
         print_progress_freq: 500
+        image_log_freq: 500
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: -1
         validation_freq: 500
