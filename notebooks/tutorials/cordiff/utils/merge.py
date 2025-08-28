@@ -75,6 +75,63 @@ def write_grouped_netcdf(path, ds_input, ds_output, invariant_ds=None):
                     ncfile.createDimension("x_grid", x_grid)
                 grp_inv.createVariable(var, "f4", ("y_grid", "x_grid"))[:] = data
 
+def compute_single_file_stats(data_path, json_out_path, invariant_ds=None):
+    """
+    Compute statistics for a single NetCDF file with input, output, and optional invariant groups.
+
+    Args:
+        data_path (str): Path to the NetCDF file.
+        json_out_path (str): Path to save the JSON file with computed statistics.
+        invariant_ds (xarray.Dataset, optional): Invariant dataset to include in the statistics. Defaults to None.
+    """
+    if not os.path.exists(data_path):
+        print(f"NetCDF file '{data_path}' not found.")
+        return
+
+    stats = {"input": {}, "output": {}, "invariant": {}}
+
+    try:
+        # Process input group
+        ds_input = xr.open_dataset(data_path, group="input")
+        for var in ds_input.data_vars:
+            data = ds_input[var].values.astype(np.float32)
+            stats["input"][var] = {
+                "mean": float(np.nanmean(data)),
+                "std": float(np.nanstd(data))
+            }
+        ds_input.close()
+
+        # Process output group
+        ds_output = xr.open_dataset(data_path, group="output")
+        for var in ds_output.data_vars:
+            data = ds_output[var].values.astype(np.float32)
+            stats["output"][var] = {
+                "mean": float(np.nanmean(data)),
+                "std": float(np.nanstd(data))
+            }
+        ds_output.close()
+
+        # Process invariant group if provided
+        if invariant_ds is not None:
+            for var in invariant_ds.data_vars:
+                arr = invariant_ds[var]
+                if "Time" in arr.dims:
+                    arr = arr.isel(Time=0)
+                data = arr.values.astype(np.float32).squeeze()
+                stats["invariant"][var] = {
+                    "mean": float(np.nanmean(data)),
+                    "std": float(np.nanstd(data))
+                }
+
+    except Exception as e:
+        print(f"Error processing file '{data_path}': {e}")
+        return
+
+    # Save statistics to JSON
+    with open(json_out_path, "w") as f:
+        json.dump(stats, f, indent=2)
+    print(f"Saved statistics to {json_out_path}")
+    
 def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None):
     if not os.path.exists(input_dir):
         print(f"Output directory '{input_dir}' not found.")

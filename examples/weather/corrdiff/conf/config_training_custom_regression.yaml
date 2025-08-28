@@ -61,7 +61,7 @@ defaults:
 dataset:
     data_path: /app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.nc
     # Path to .nc data file
-    stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
+    stats_path: "/app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.json"
     # Path to json stats file
     input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
     output_variables: ["U10", "V10"]
