@@ -1082,16 +1082,16 @@ def main(cfg: DictConfig) -> None:
     # Load optimizer checkpoint
     if dist.world_size > 1:
         torch.distributed.barrier()
-    try:
-        load_checkpoint(
-            path=checkpoint_dir,
-            optimizer=optimizer,
-            device=dist.device,
-        )
-    except Exception:
-        pass
-    
-
+    if cfg.training.io.get("load_optimizer", True):
+        try:
+            load_checkpoint(
+                path=checkpoint_dir,
+                optimizer=optimizer,
+                device=dist.device,
+            )
+        except Exception:
+            pass
+        
     ############################################################################
     #                            MAIN TRAINING LOOP                            #
     ############################################################################

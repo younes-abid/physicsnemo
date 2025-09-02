@@ -61,3 +61,5 @@ io:
     # how often to record the validation loss, measured in number of processed samples
     validation_steps: 10
     # how many loss evaluations are used to compute the validation loss per checkpoint
+    load_optimizer: True
+    # Whether to load the optimizer state when resuming from a checkpoint
