@@ -49,8 +49,10 @@ io:
     # Where to load the regression checkpoint. Should be overridden.
     print_progress_freq: 1000
     # How often to print progress
+    metric_log_freq: 500
+    # How often to log metrics, measured in number of processed samples to tensorboard
     image_log_freq: 500
-    # How often to log images, measured in number of processed samples
+    # How often to log images, measured in number of processed samples to tensorboard
     save_checkpoint_freq: 5000
     # How often to save the checkpoints, measured in number of processed samples
     save_n_recent_checkpoints: -1

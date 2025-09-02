@@ -586,7 +586,8 @@ def aggregate_metrics(all_metrics, dist):
 
 def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
                                    use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-                                   batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag=True):
+                                   batch_size_per_gpu, num_accumulation_rounds, cfg, cur_nimg,
+                                   compute_metrics_flag=True):
     """Accumulate gradients and compute metrics over multiple rounds."""
     loss_accum = 0
     all_metrics = []
@@ -629,14 +630,16 @@ def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_
         with torch.no_grad():
             predictions_cat = torch.cat(all_predictions)
             targets_cat = torch.cat(all_targets)
-            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
-                                      variables=cfg.dataset.output_variables)
-            images = prepare_images(predictions_cat=predictions_cat,
-            targets_cat=targets_cat,
-            prefix="training_",
-            variables=cfg.dataset.output_variables,
-            n=1
-        )
+            if cur_nimg % cfg.training.io.metric_log_freq == 0:
+                metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
+                                        variables=cfg.dataset.output_variables)
+            if cur_nimg % cfg.training.io.image_log_freq == 0:
+                images = prepare_images(predictions_cat=predictions_cat,
+                                        targets_cat=targets_cat,
+                                        prefix="training_",
+                                        variables=cfg.dataset.output_variables,
+                                        n=1
+                                    )
     
     return loss_accum, metrics, images
 
@@ -721,7 +724,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         loss_accum, metrics, images = accumulate_gradients_and_metrics(
             model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
             use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag
+            batch_size_per_gpu, num_accumulation_rounds, cfg, cur_nimg, compute_metrics_flag,
         )
         
         # Aggregate loss across processes

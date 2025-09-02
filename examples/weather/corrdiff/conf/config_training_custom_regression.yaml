@@ -86,9 +86,9 @@ training:
         grad_clip_threshold: 4 # null # Simulate a larger batch size
         lr_decay: 1
         lr_rampup: 0
-        lr_decay_rate: 500000.0
+        lr_decay_rate: 50000.0
     perf:
-        fp_optimizations: amp-bf16
+        fp_optimizations: fp32
         # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
         # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
         dataloader_workers: 4
@@ -99,7 +99,8 @@ training:
     io:
         regression_checkpoint_path: null
         print_progress_freq: 500
-        image_log_freq: 500
+        metric_log_freq: 1
+        image_log_freq: 5000
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: -1
         validation_freq: 500
