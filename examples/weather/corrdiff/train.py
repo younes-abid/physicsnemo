@@ -509,6 +509,21 @@ def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: st
         p = p[mask]
         t = t[mask]
         
+        # TODO add CRP continuous rank probability score
+        # TODO add KLD kullback-leibler divergence
+        
+        
+        # Compute mean and std errors
+        pred_mean = torch.mean(p)
+        target_mean = torch.mean(t)
+        pred_std = torch.std(p)
+        target_std = torch.std(t)
+
+        metrics[f'{prefix}mean_error_{var}'] = torch.abs(pred_mean - target_mean)
+        metrics[f'{prefix}std_error_{var}'] = torch.abs(pred_std - target_std)
+        metrics[f'{prefix}relative_mean_error_{var}'] = torch.abs(pred_mean - target_mean) / (torch.abs(target_mean) + 1e-8)
+        metrics[f'{prefix}relative_std_error_{var}'] = torch.abs(pred_std - target_std) / (torch.abs(target_std) + 1e-8)
+        
         # Basic regression metrics
         metrics[f'{prefix}mae_{var}'] = torch.mean(torch.abs(p - t))
         metrics[f'{prefix}mse_{var}'] = torch.mean((p - t) ** 2)

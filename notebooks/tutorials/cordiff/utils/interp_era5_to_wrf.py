@@ -98,6 +98,9 @@ def process_date(date_str, ERA5_DIR, WRF_DIR, OUT_DIR, VARIABLES, LEVELS, SINGLE
     if not (os.path.exists(pres_file) and os.path.exists(single_file) and os.path.exists(wrf_file)):
         print(" Skipping.")
         return
+    if os.path.exists(out_file):
+        print(" Already done.")
+        return
 
     wrf_lats, wrf_lons = get_wrf_grid(wrf_file)
 
