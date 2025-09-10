@@ -12,6 +12,7 @@ docker run -it --rm \
     -v "$(pwd)/examples:/app/examples" \
     -v "$(pwd)/physicsnemo:/app/physicsnemo" \
     -v "$(pwd)/data:/app/data" \
+    -v "/mnt/storage:/mnt/storage" \
     -v "$(pwd)/scripts:/app/scripts" \
     -v "$(pwd)/notebooks:/app/notebooks" \
     -v "$(pwd)/outputs:/app/outputs" \
