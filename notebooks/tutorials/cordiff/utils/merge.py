@@ -236,6 +236,54 @@ def merge_files(era_path, wrf_path, out_path, invariant_ds=None):
     else:
         print(f"Successfully merged {count} file(s).")
 
+def merge_file(date_str, era_path, wrf_path, out_path, input_vars, output_vars, invariant_ds=None, remove_era=False):
+    """
+    Merges a single ERA5 and WRF file for a given date.
+
+    Args:
+        date_str (str): Date string to process (e.g., "2023-01-01").
+        era_path (str): Path to the interpolated ERA5 files.
+        wrf_path (str): Path to the WRF files.
+        out_path (str): Path to save the combined output files.
+        input_vars (list): List of input variable names to extract from ERA5 files.
+        output_vars (list): List of output variable names to extract from WRF files.
+        invariant_ds (xarray.Dataset, optional): Invariant dataset to include in the output. Defaults to None.
+        remove_era (bool): If True, removes the ERA5 file after successful merging to free disk space.
+    """
+    era_file = os.path.join(era_path, f"interpolated_era5_{date_str}.nc")
+    wrf_file = os.path.join(wrf_path, f"wrfout_final_{date_str}.nc")
+    out_file = os.path.join(out_path, f"inp_out_combined_{date_str}.nc")
+
+    if not os.path.exists(wrf_file):
+        print(f"Skipping {date_str} — WRF file not found: {wrf_file}")
+        return
+
+    try:
+        # Open ERA5 and WRF datasets
+        ds_era = xr.open_dataset(era_file)
+        ds_wrf = xr.open_dataset(wrf_file)
+
+        # Compute rain rate and add it to the WRF dataset
+        ds_wrf["rain_rate"] = compute_rain_rate(ds_wrf)
+
+        print(f"Processing {date_str}...")
+
+        # Dynamically select input and output variables
+        ds_input = ds_era[input_vars]
+        ds_output = ds_wrf[output_vars]
+
+        # Write the combined dataset to a NetCDF file
+        write_grouped_netcdf(out_file, ds_input, ds_output, invariant_ds)
+        print(f"Saved: {out_file}")
+
+        # Remove the ERA5 file if the merge was successful and remove_era is True
+        if remove_era:
+            os.remove(era_file)
+            print(f"Removed ERA5 file: {era_file}")
+
+    except Exception as e:
+        print(f"Failed to merge {date_str}: {e}")
+        
 # Run
 # if __name__ == "__main__":
 #     merge_files(ERA5_DIR, WRF_DIR, OUT_DIR)
