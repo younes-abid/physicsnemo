@@ -2,8 +2,7 @@ import os
 import xarray as xr
 from netCDF4 import Dataset
 import numpy as np
-from datetime import timedelta
-from glob import glob
+from datetime import timedelta, datetime
 
 
 # Function to pad dimensions to the nearest multiple
@@ -14,91 +13,88 @@ def pad_to_multiple_of(ds, dim_y, dim_x, multiple_of, pad_value):
     pad_x = new_x - ds.dims[dim_x]
     return ds.pad({dim_y: (0, pad_y), dim_x: (0, pad_x)}, constant_values=pad_value)
 
-
 # Function to process a single file
 def process_file(file, multiple_of, pad_value):
     print(f"Processing file: {file}")
     input_ds = xr.open_dataset(file, group="input")
     output_ds = xr.open_dataset(file, group="output")
-
+    
     # Pad input and output datasets
     input_ds = pad_to_multiple_of(input_ds, "y_lr", "x_lr", multiple_of, pad_value)
     output_ds = pad_to_multiple_of(output_ds, "y_hr", "x_hr", multiple_of, pad_value)
-
+    
     # Check for invariant group
     try:
         invariant_ds = xr.open_dataset(file, group="invariant")
     except Exception:
         print(f"No invariant group found in {file}, skipping invariant.")
         invariant_ds = None
-
+    
     # Extract the date from the filename
     date_str = os.path.basename(file).split("_")[-1].replace(".nc", "")
     base_date = np.datetime64(date_str)
     num_samples = input_ds.dims["sample"]
-
+    
     # Generate time values for the file
     time_step = timedelta(hours=24 / num_samples)  # Time step based on num_samples
     time_values = [base_date + np.timedelta64(int(i * time_step.total_seconds()), 's') for i in range(num_samples)]
-
+    
     return input_ds, output_ds, invariant_ds, time_values
 
-
 # Function to write the combined dataset to a NetCDF file
-def write_combined_dataset(output_file, combined_input, combined_output, combined_invariant, time_array, append=False):
-    if not append:
-        print(f"Writing combined dataset to {output_file}...")
-        with Dataset(output_file, "w", format="NETCDF4") as ncfile:
-            # Create dimensions
-            ncfile.createDimension("sample", size=combined_input.dims["sample"])
-            ncfile.createDimension("coord", size=2)  # Assuming coord has 2 dimensions (latitude, longitude)
+def write_combined_dataset(output_file, combined_input, combined_output, combined_invariant, time_array):
+    print(f"Writing combined dataset to {output_file}...")
+    with Dataset(output_file, "w", format="NETCDF4") as ncfile:
+        # Create dimensions
+        ncfile.createDimension("sample", size=combined_input.dims["sample"])
+        ncfile.createDimension("coord", size=2)  # Assuming coord has 2 dimensions (latitude, longitude)
 
-            # Add time variable
-            time_var = ncfile.createVariable("time", "f8", ("sample",))
-            time_var[:] = time_array.astype("datetime64[s]").astype(float)  # Convert to seconds since epoch
-            time_var.units = "seconds since 1970-01-01 00:00:00"
-            time_var.calendar = "standard"
+        # Add time variable
+        time_var = ncfile.createVariable("time", "f8", ("sample",))
+        time_var[:] = time_array.astype("datetime64[s]").astype(float)  # Convert to seconds since epoch
+        time_var.units = "seconds since 1970-01-01 00:00:00"
+        time_var.calendar = "standard"
 
-            # Add coord variable (dummy values for now)
-            coord_var = ncfile.createVariable("coord", "f4", ("sample", "coord"))
-            coord_var[:, :] = np.full((combined_input.dims["sample"], 2), 1)  # Replace with actual coordinates if available
+        # Add coord variable (dummy values for now)
+        coord_var = ncfile.createVariable("coord", "f4", ("sample", "coord"))
+        coord_var[:, :] = np.full((combined_input.dims["sample"], 2), 1)  # Replace with actual coordinates if available
 
-            # Create groups
-            input_group = ncfile.createGroup("input")
-            output_group = ncfile.createGroup("output")
-            invariant_group = ncfile.createGroup("invariant") if combined_invariant is not None else None
+        # Create groups
+        input_group = ncfile.createGroup("input")
+        output_group = ncfile.createGroup("output")
+        invariant_group = ncfile.createGroup("invariant") if combined_invariant is not None else None
 
-            # Add input variables
-            for var in combined_input.data_vars:
-                data = combined_input[var].values
-                dims = combined_input[var].dims
+        # Add input variables
+        for var in combined_input.data_vars:
+            data = combined_input[var].values
+            dims = combined_input[var].dims
+            for dim in dims:
+                if dim not in input_group.dimensions:
+                    input_group.createDimension(dim, size=combined_input.dims[dim])
+            input_group.createVariable(var, "f4", dims)[:] = data
+
+        # Add output variables
+        for var in combined_output.data_vars:
+            data = combined_output[var].values
+            dims = combined_output[var].dims
+            for dim in dims:
+                if dim not in output_group.dimensions:
+                    output_group.createDimension(dim, size=combined_output.dims[dim])
+            output_group.createVariable(var, "f4", dims)[:] = data
+
+        # Add invariant variables if they exist
+        if combined_invariant is not None:
+            for var in combined_invariant.data_vars:
+                data = combined_invariant[var].values
+                dims = combined_invariant[var].dims
                 for dim in dims:
-                    if dim not in input_group.dimensions:
-                        input_group.createDimension(dim, size=combined_input.dims[dim])
-                input_group.createVariable(var, "f4", dims)[:] = data
+                    if dim not in invariant_group.dimensions:
+                        invariant_group.createDimension(dim, size=combined_invariant.dims[dim])
+                invariant_group.createVariable(var, "f4", dims)[:] = data
 
-            # Add output variables
-            for var in combined_output.data_vars:
-                data = combined_output[var].values
-                dims = combined_output[var].dims
-                for dim in dims:
-                    if dim not in output_group.dimensions:
-                        output_group.createDimension(dim, size=combined_output.dims[dim])
-                output_group.createVariable(var, "f4", dims)[:] = data
+    print(f"Combined dataset saved to {output_file}")
 
-            # Add invariant variables if they exist
-            if combined_invariant is not None:
-                for var in combined_invariant.data_vars:
-                    data = combined_invariant[var].values
-                    dims = combined_invariant[var].dims
-                    for dim in dims:
-                        if dim not in invariant_group.dimensions:
-                            invariant_group.createDimension(dim, size=combined_invariant.dims[dim])
-                    invariant_group.createVariable(var, "f4", dims)[:] = data
-
-        print(f"Combined dataset saved to {output_file}")
-
-
+# Main function to process and combine all files
 def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
     """
     Concatenates NetCDF files from the input directory into a single output file.
@@ -118,11 +114,10 @@ def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
     # Check for already concatenated files
     if os.path.exists(OUTPUT_FILE):
         print(f"Existing concatenated file found: {OUTPUT_FILE}")
-        existing_ds = xr.open_dataset(OUTPUT_FILE)
-        if "time" in existing_ds.data_vars:
+        existing_ds = xr.open_dataset(OUTPUT_FILE, group="input")
+        if "time" in existing_ds.coords:
             existing_time_shape = existing_ds["time"].shape[0]
             existing_dates = set(existing_ds["time"].values.astype("datetime64[D]").astype(str))
-            print(f"Already concatenated {existing_time_shape} samples corresponding to {len(existing_dates)} unique dates.")
         else:
             print("Warning: 'time' coordinate not found in the existing concatenated file. Assuming no dates are concatenated.")
             existing_time_shape = 0
@@ -191,6 +186,11 @@ def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
 
         # Convert time values to a NumPy array
         time_array = np.array(time_values)
+
+        # Validate time shape before appending
+        if existing_time_shape > 0 and existing_time_shape != len(time_array):
+            print(f"Warning: Shape mismatch for 'time' variable. Existing shape: {existing_time_shape}, New shape: {len(time_array)}. Skipping this chunk.")
+            continue
 
         # Write the combined dataset
         write_combined_dataset(OUTPUT_FILE, combined_input, combined_output, combined_invariant, time_array, append=os.path.exists(OUTPUT_FILE))
