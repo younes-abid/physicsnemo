@@ -4,7 +4,9 @@ import json
 import numpy as np
 import xarray as xr
 from netCDF4 import Dataset
+from multiprocessing import Pool, Manager
 import warnings
+import time
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 # CONFIG
@@ -131,65 +133,209 @@ def compute_single_file_stats(data_path, json_out_path, invariant_ds=None):
     with open(json_out_path, "w") as f:
         json.dump(stats, f, indent=2)
     print(f"Saved statistics to {json_out_path}")
-    
-def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None):
+
+####
+def process_file_stats(fpath):
+    """
+    Process a single file to compute statistics for input and output groups.
+
+    Args:
+        fpath (str): Path to the NetCDF file.
+
+    Returns:
+        dict: A dictionary containing the stats for the file.
+    """
+    print(f"Processing file: {fpath}\n")
+    start_time = time.time()
+    stats = {"input": {}, "output": {}}
+    try:
+        # Process input group
+        input_start = time.time()
+        ds_input = xr.open_dataset(fpath, group="input")
+        for var in ds_input.data_vars:
+            print(f"Processing variable '{var}' in input group...")
+            data = ds_input[var].values.astype(np.float32)
+            stats["input"][var] = {
+                "sum": np.nansum(data),
+                "sumsq": np.nansum(data ** 2),
+                "count": np.count_nonzero(~np.isnan(data))
+            }
+        ds_input.close()
+        print(f"Processed input group in {time.time() - input_start:.2f} seconds.")
+
+        # Process output group
+        output_start = time.time()
+        ds_output = xr.open_dataset(fpath, group="output")
+        for var in ds_output.data_vars:
+            print(f"Processing variable '{var}' in output group...")
+            data = ds_output[var].values.astype(np.float32)
+            stats["output"][var] = {
+                "sum": np.nansum(data),
+                "sumsq": np.nansum(data ** 2),
+                "count": np.count_nonzero(~np.isnan(data))
+            }
+        ds_output.close()
+        print(f"Processed output group in {time.time() - output_start:.2f} seconds.")
+    except Exception as e:
+        print(f"Error processing file '{fpath}': {e}")
+    print(f"Finished processing file {fpath} in {time.time() - start_time:.2f} seconds.")
+    print(stats,"\n")
+    return stats
+
+
+def merge_stats(global_stats, file_stats):
+    """
+    Merge the stats from a single file into the global stats.
+
+    Args:
+        global_stats (dict): The global stats dictionary.
+        file_stats (dict): The stats dictionary for a single file.
+    """
+    for category in ["input", "output"]:
+        for var, v in file_stats[category].items():
+            if var not in global_stats[category]:
+                global_stats[category][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
+            global_stats[category][var]["sum"] += v["sum"]
+            global_stats[category][var]["sumsq"] += v["sumsq"]
+            global_stats[category][var]["count"] += v["count"]
+
+
+def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None, num_workers=12):
+    """
+    Compute combined statistics for all NetCDF files in a directory using multiprocessing.
+
+    Args:
+        input_dir (str): Path to the directory containing NetCDF files.
+        json_out_path (str): Path to save the JSON file with computed statistics.
+        invariant_ds (xarray.Dataset, optional): Invariant dataset to include in the statistics. Defaults to None.
+        num_workers (int): Number of parallel workers to use.
+    """
+    start_time = time.time()
+
     if not os.path.exists(input_dir):
         print(f"Output directory '{input_dir}' not found.")
         return
 
-    file_list = sorted([f for f in os.listdir(input_dir) if f.endswith(".nc")])
+    file_list = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".nc")])
     if not file_list:
         print(f"No NetCDF files found in '{input_dir}' to compute statistics.")
         return
 
-    stats = {"input": {}, "output": {}, "invariant": {}}
+    print(f"Found {len(file_list)} NetCDF files in '{input_dir}' to compute statistics.")
+    print(f"Starting computation at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    for fname in file_list:
-        fpath = os.path.join(input_dir, fname)
-        try:
-            ds_input = xr.open_dataset(fpath, group="input")
-            for var in ds_input.data_vars:
-                data = ds_input[var].values.astype(np.float32)
-                if var not in stats["input"]:
-                    stats["input"][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
-                stats["input"][var]["sum"] += np.nansum(data)
-                stats["input"][var]["sumsq"] += np.nansum(data ** 2)
-                stats["input"][var]["count"] += np.count_nonzero(~np.isnan(data))
-            ds_input.close()
+    # Use multiprocessing to process files in parallel
+    with Manager() as manager:
+        global_stats = manager.dict({"input": {}, "output": {}, "invariant": {}})
+        with Pool(num_workers) as pool:
+            print("Starting parallel processing of files...")
+            parallel_start = time.time()
+            file_stats_list = pool.map(process_file_stats, file_list)
+            print(f"Parallel processing completed in {time.time() - parallel_start:.2f} seconds.")
 
-            ds_output = xr.open_dataset(fpath, group="output")
-            for var in ds_output.data_vars:
-                data = ds_output[var].values.astype(np.float32)
-                if var not in stats["output"]:
-                    stats["output"][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
-                stats["output"][var]["sum"] += np.nansum(data)
-                stats["output"][var]["sumsq"] += np.nansum(data ** 2)
-                stats["output"][var]["count"] += np.count_nonzero(~np.isnan(data))
-            ds_output.close()
-        except Exception as e:
-            print(f"Skipped file {fname} due to error: {e}")
-            continue
+        # Merge all file stats into global stats
+        print("Merging statistics from all files...")
+        merge_start = time.time()
+        for file_stats in file_stats_list:
+            merge_stats(global_stats, file_stats)
+        print(f"Merging completed in {time.time() - merge_start:.2f} seconds.")
 
-    for category in ["input", "output"]:
-        for var, v in stats[category].items():
-            mean = v["sum"] / v["count"]
-            std = np.sqrt(v["sumsq"] / v["count"] - mean ** 2)
-            stats[category][var] = {"mean": float(mean), "std": float(std)}
+        # Compute mean and standard deviation for input and output groups
+        print("Computing mean and standard deviation...")
+        compute_start = time.time()
+        for category in ["input", "output"]:
+            for var, v in global_stats[category].items():
+                mean = v["sum"] / v["count"]
+                std = np.sqrt(v["sumsq"] / v["count"] - mean ** 2)
+                global_stats[category][var] = {"mean": float(mean), "std": float(std)}
+        print(f"Mean and standard deviation computation completed in {time.time() - compute_start:.2f} seconds.")
 
-    if invariant_ds is not None:
-        for var in invariant_ds.data_vars:
-            arr = invariant_ds[var]
-            if "Time" in arr.dims:
-                arr = arr.isel(Time=0)
-            data = arr.values.astype(np.float32).squeeze()
-            stats["invariant"][var] = {
-                "mean": float(np.nanmean(data)),
-                "std": float(np.nanstd(data))
-            }
+        # Process invariant dataset if provided
+        if invariant_ds is not None:
+            print("Processing invariant dataset...")
+            invariant_start = time.time()
+            for var in invariant_ds.data_vars:
+                arr = invariant_ds[var]
+                if "Time" in arr.dims:
+                    arr = arr.isel(Time=0)
+                data = arr.values.astype(np.float32).squeeze()
+                global_stats["invariant"][var] = {
+                    "mean": float(np.nanmean(data)),
+                    "std": float(np.nanstd(data))
+                }
+            print(f"Invariant dataset processing completed in {time.time() - invariant_start:.2f} seconds.")
 
-    with open(json_out_path, "w") as f:
-        json.dump(stats, f, indent=2)
-    print(f"Saved full variable stats (input, output, invariant) to {json_out_path}")
+        # Save statistics to JSON
+        print("Saving statistics to JSON...")
+        save_start = time.time()
+        with open(json_out_path, "w") as f:
+            json.dump(dict(global_stats), f, indent=2)
+        print(f"Statistics saved to {json_out_path} in {time.time() - save_start:.2f} seconds.")
+
+    print(f"Total computation time: {time.time() - start_time:.2f} seconds.")
+
+    
+# def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None):
+#     if not os.path.exists(input_dir):
+#         print(f"Output directory '{input_dir}' not found.")
+#         return
+
+#     file_list = sorted([f for f in os.listdir(input_dir) if f.endswith(".nc")])
+#     if not file_list:
+#         print(f"No NetCDF files found in '{input_dir}' to compute statistics.")
+#         return
+#     else:
+#         print(f"Found {len(file_list)} NetCDF files in '{input_dir}' to compute statistics.")
+
+#     stats = {"input": {}, "output": {}, "invariant": {}}
+
+#     for fname in file_list:
+#         fpath = os.path.join(input_dir, fname)
+#         print(f"Processing file: {fname}")
+#         try:
+#             ds_input = xr.open_dataset(fpath, group="input")
+#             for var in ds_input.data_vars:
+#                 data = ds_input[var].values.astype(np.float32)
+#                 if var not in stats["input"]:
+#                     stats["input"][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
+#                 stats["input"][var]["sum"] += np.nansum(data)
+#                 stats["input"][var]["sumsq"] += np.nansum(data ** 2)
+#                 stats["input"][var]["count"] += np.count_nonzero(~np.isnan(data))
+#             ds_input.close()
+
+#             ds_output = xr.open_dataset(fpath, group="output")
+#             for var in ds_output.data_vars:
+#                 data = ds_output[var].values.astype(np.float32)
+#                 if var not in stats["output"]:
+#                     stats["output"][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
+#                 stats["output"][var]["sum"] += np.nansum(data)
+#                 stats["output"][var]["sumsq"] += np.nansum(data ** 2)
+#                 stats["output"][var]["count"] += np.count_nonzero(~np.isnan(data))
+#             ds_output.close()
+#         except Exception as e:
+#             print(f"Skipped file {fname} due to error: {e}")
+#             continue
+
+#     for category in ["input", "output"]:
+#         for var, v in stats[category].items():
+#             mean = v["sum"] / v["count"]
+#             std = np.sqrt(v["sumsq"] / v["count"] - mean ** 2)
+#             stats[category][var] = {"mean": float(mean), "std": float(std)}
+
+#     if invariant_ds is not None:
+#         for var in invariant_ds.data_vars:
+#             arr = invariant_ds[var]
+#             if "Time" in arr.dims:
+#                 arr = arr.isel(Time=0)
+#             data = arr.values.astype(np.float32).squeeze()
+#             stats["invariant"][var] = {
+#                 "mean": float(np.nanmean(data)),
+#                 "std": float(np.nanstd(data))
+#             }
+
+#     with open(json_out_path, "w") as f:
+#         json.dump(stats, f, indent=2)
+#     print(f"Saved full variable stats (input, output, invariant) to {json_out_path}")
 
 def merge_files(era_path, wrf_path, out_path, invariant_ds=None):
     print(f"Merging files from {era_path} and {wrf_path} into {out_path}")

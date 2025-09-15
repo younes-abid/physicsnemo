@@ -6,12 +6,26 @@ from datetime import timedelta
 from glob import glob
 
 
+def get_concatenated_dates(concat_dir):
+    concatenated_files = sorted(glob(os.path.join(concat_dir, "*.nc")))
+    concatenated_dates = set()
+
+    for file in concatenated_files:
+        existing_ds = xr.open_dataset(file)
+        if "time" in existing_ds.data_vars:
+            existing_dates = set(existing_ds["time"].values.astype("datetime64[D]").astype(str))
+            concatenated_dates.update(existing_dates)
+    return {str(date) for date in concatenated_dates}
+
+def get_chunks(date_list, chunk_size):
+    return [date_list[i:i + chunk_size] for i in range(0, len(date_list), chunk_size)]
+
 # Function to pad dimensions to the nearest multiple
 def pad_to_multiple_of(ds, dim_y, dim_x, multiple_of, pad_value):
-    new_y = ((ds.dims[dim_y] + (multiple_of - 1)) // multiple_of) * multiple_of
-    new_x = ((ds.dims[dim_x] + (multiple_of - 1)) // multiple_of) * multiple_of
-    pad_y = new_y - ds.dims[dim_y]
-    pad_x = new_x - ds.dims[dim_x]
+    new_y = ((ds.sizes[dim_y] + (multiple_of - 1)) // multiple_of) * multiple_of
+    new_x = ((ds.sizes[dim_x] + (multiple_of - 1)) // multiple_of) * multiple_of
+    pad_y = new_y - ds.sizes[dim_y]
+    pad_x = new_x - ds.sizes[dim_x]
     return ds.pad({dim_y: (0, pad_y), dim_x: (0, pad_x)}, constant_values=pad_value)
 
 
@@ -29,7 +43,7 @@ def process_file(file, multiple_of, pad_value):
     try:
         invariant_ds = xr.open_dataset(file, group="invariant")
     except Exception:
-        print(f"No invariant group found in {file}, skipping invariant.")
+        #print(f"No invariant group found in {file}, skipping invariant.")
         invariant_ds = None
 
     # Extract the date from the filename
@@ -208,7 +222,84 @@ def write_combined_dataset(output_file, combined_input, combined_output, combine
         
         print(f"Data successfully appended to {output_file}")
 
-def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
+
+def concat(chunk, IN_DIR, OUT_DIR, MULTIPLE_OF, PAD_VALUE):
+    """
+    Concatenates NetCDF files corresponding to a list of dates (chunk), saves the result, 
+    and removes the processed files from the input directory.
+
+    Args:
+        chunk (list): List of dates to process.
+        IN_DIR (str): Path to the directory containing input NetCDF files.
+        OUT_DIR (str): Path to the directory where the concatenated file will be saved.
+        MULTIPLE_OF (int): Padding multiple for dimensions.
+        PAD_VALUE (int): Value to use for padding.
+    """
+    # Generate the output file path
+    output_file = f"{OUT_DIR}/{chunk[0]}_{chunk[-1]}_{len(chunk)}.nc"
+
+    # Find all files corresponding to the dates in the chunk
+    files_to_process = []
+    for date in chunk:
+        matching_files = glob(os.path.join(IN_DIR, f"*{date}*.nc"))
+        files_to_process.extend(matching_files)
+
+    if not files_to_process:
+        print(f"No files found for dates in chunk: {chunk}")
+        return
+
+    print(f"Processing chunk: {chunk[0]}_{chunk[-1]}_{len(chunk)}")
+    print(f"Found {len(files_to_process)} files to process.")
+
+    # Initialize lists to store datasets for each group
+    input_datasets = []
+    output_datasets = []
+    invariant_datasets = []
+    time_values = []
+
+    # Process each file in the chunk
+    for file in files_to_process:
+        try:
+            input_ds, output_ds, invariant_ds, file_time_values = process_file(file, MULTIPLE_OF, PAD_VALUE)
+            input_datasets.append(input_ds)
+            output_datasets.append(output_ds)
+            if invariant_ds is not None:
+                invariant_datasets.append(invariant_ds)
+            time_values.extend(file_time_values)
+        except Exception as e:
+            print(f"Skipped file {file} due to error: {e}")
+
+    # Concatenate datasets for each group
+    print("Concatenating input datasets...")
+    combined_input = xr.concat(input_datasets, dim="sample")
+    print("Concatenating output datasets...")
+    combined_output = xr.concat(output_datasets, dim="sample")
+
+    # Combine invariant datasets if they exist
+    if invariant_datasets:
+        print("Combining invariant datasets...")
+        combined_invariant = xr.concat(invariant_datasets, dim="sample")
+    else:
+        print("No invariant datasets found.")
+        combined_invariant = None
+
+    # Convert time values to a NumPy array
+    time_array = np.array(time_values)
+
+    # Write the combined dataset
+    write_combined_dataset(output_file, combined_input, combined_output, combined_invariant, time_array, append=False)
+
+    # Remove processed files from the input directory
+    for file in files_to_process:
+        try:
+            os.remove(file)
+            print(f"Removed file: {file}")
+        except Exception as e:
+            print(f"Failed to remove file {file}: {e}")
+
+    print(f"Chunk of size {len(chunk)} successfully processed and saved to {output_file}.")
+    
+def concat_(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
     """
     Concatenates NetCDF files from the input directory into a single output file.
 
