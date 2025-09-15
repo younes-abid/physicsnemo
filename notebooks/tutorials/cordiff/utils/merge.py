@@ -192,23 +192,33 @@ def merge_stats(global_stats, file_stats):
         file_stats (dict): The stats dictionary for a single file.
     """
     for category in ["input", "output"]:
+        if category not in global_stats:
+            continue
+            
         for var, v in file_stats[category].items():
+            # Check if variable exists in global stats, if not initialize it
             if var not in global_stats[category]:
-                global_stats[category][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
-            global_stats[category][var]["sum"] += v["sum"]
-            global_stats[category][var]["sumsq"] += v["sumsq"]
-            global_stats[category][var]["count"] += v["count"]
+                # Create a new manager dict for this variable
+                var_dict = Manager().dict()
+                var_dict["sum"] = 0.0
+                var_dict["sumsq"] = 0.0
+                var_dict["count"] = 0
+                global_stats[category][var] = var_dict
+            
+            # Get current values
+            current_sum = global_stats[category][var].get("sum", 0.0)
+            current_sumsq = global_stats[category][var].get("sumsq", 0.0)
+            current_count = global_stats[category][var].get("count", 0)
+            
+            # Update values
+            global_stats[category][var]["sum"] = current_sum + float(v["sum"])
+            global_stats[category][var]["sumsq"] = current_sumsq + float(v["sumsq"])
+            global_stats[category][var]["count"] = current_count + int(v["count"])
 
 
 def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None, num_workers=12):
     """
     Compute combined statistics for all NetCDF files in a directory using multiprocessing.
-
-    Args:
-        input_dir (str): Path to the directory containing NetCDF files.
-        json_out_path (str): Path to save the JSON file with computed statistics.
-        invariant_ds (xarray.Dataset, optional): Invariant dataset to include in the statistics. Defaults to None.
-        num_workers (int): Number of parallel workers to use.
     """
     start_time = time.time()
 
@@ -224,53 +234,76 @@ def compute_dataset_stats(input_dir, json_out_path, invariant_ds=None, num_worke
     print(f"Found {len(file_list)} NetCDF files in '{input_dir}' to compute statistics.")
     print(f"Starting computation at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Use multiprocessing to process files in parallel
-    with Manager() as manager:
-        global_stats = manager.dict({"input": {}, "output": {}, "invariant": {}})
-        with Pool(num_workers) as pool:
-            print("Starting parallel processing of files...")
-            parallel_start = time.time()
-            file_stats_list = pool.map(process_file_stats, file_list)
-            print(f"Parallel processing completed in {time.time() - parallel_start:.2f} seconds.")
+    # Process files in parallel
+    with Pool(num_workers) as pool:
+        print("Starting parallel processing of files...")
+        parallel_start = time.time()
+        file_stats_list = pool.map(process_file_stats, file_list)
+        print(f"Parallel processing completed in {time.time() - parallel_start:.2f} seconds.")
 
-        # Merge all file stats into global stats
-        print("Merging statistics from all files...")
-        merge_start = time.time()
-        for file_stats in file_stats_list:
-            merge_stats(global_stats, file_stats)
-        print(f"Merging completed in {time.time() - merge_start:.2f} seconds.")
-
-        # Compute mean and standard deviation for input and output groups
-        print("Computing mean and standard deviation...")
-        compute_start = time.time()
+    # Merge statistics manually (avoiding manager dict complexity)
+    print("Merging statistics from all files...")
+    merge_start = time.time()
+    
+    global_stats = {"input": {}, "output": {}, "invariant": {}}
+    
+    for file_stats in file_stats_list:
         for category in ["input", "output"]:
-            for var, v in global_stats[category].items():
-                mean = v["sum"] / v["count"]
-                std = np.sqrt(v["sumsq"] / v["count"] - mean ** 2)
-                global_stats[category][var] = {"mean": float(mean), "std": float(std)}
-        print(f"Mean and standard deviation computation completed in {time.time() - compute_start:.2f} seconds.")
+            for var, v in file_stats[category].items():
+                if var not in global_stats[category]:
+                    global_stats[category][var] = {"sum": 0.0, "sumsq": 0.0, "count": 0}
+                
+                global_stats[category][var]["sum"] += float(v["sum"])
+                global_stats[category][var]["sumsq"] += float(v["sumsq"])
+                global_stats[category][var]["count"] += int(v["count"])
 
-        # Process invariant dataset if provided
-        if invariant_ds is not None:
-            print("Processing invariant dataset...")
-            invariant_start = time.time()
-            for var in invariant_ds.data_vars:
-                arr = invariant_ds[var]
-                if "Time" in arr.dims:
-                    arr = arr.isel(Time=0)
-                data = arr.values.astype(np.float32).squeeze()
+    print(f"Merging completed in {time.time() - merge_start:.2f} seconds.")
+
+    # Compute mean and standard deviation
+    print("Computing mean and standard deviation...")
+    compute_start = time.time()
+    
+    for category in ["input", "output"]:
+        for var, v in global_stats[category].items():
+            if v["count"] == 0:
+                print(f"Warning: Variable '{var}' in category '{category}' has zero valid values. Using defaults.")
+                global_stats[category][var] = {"mean": 0.0, "std": 1.0}
+                continue
+                
+            mean = v["sum"] / v["count"]
+            variance = max(0, v["sumsq"] / v["count"] - mean ** 2)
+            std = np.sqrt(variance)
+            global_stats[category][var] = {"mean": float(mean), "std": float(std)}
+
+    print(f"Mean and standard deviation computation completed in {time.time() - compute_start:.2f} seconds.")
+
+    # Process invariant dataset if provided
+    if invariant_ds is not None:
+        print("Processing invariant dataset...")
+        invariant_start = time.time()
+        for var in invariant_ds.data_vars:
+            arr = invariant_ds[var]
+            if "Time" in arr.dims:
+                arr = arr.isel(Time=0)
+            data = arr.values.astype(np.float32).squeeze()
+            
+            valid_data = data[~np.isnan(data)]
+            if len(valid_data) == 0:
+                print(f"Warning: Invariant variable '{var}' has no valid values. Using defaults.")
+                global_stats["invariant"][var] = {"mean": 0.0, "std": 1.0}
+            else:
                 global_stats["invariant"][var] = {
                     "mean": float(np.nanmean(data)),
                     "std": float(np.nanstd(data))
                 }
-            print(f"Invariant dataset processing completed in {time.time() - invariant_start:.2f} seconds.")
+        print(f"Invariant dataset processing completed in {time.time() - invariant_start:.2f} seconds.")
 
-        # Save statistics to JSON
-        print("Saving statistics to JSON...")
-        save_start = time.time()
-        with open(json_out_path, "w") as f:
-            json.dump(dict(global_stats), f, indent=2)
-        print(f"Statistics saved to {json_out_path} in {time.time() - save_start:.2f} seconds.")
+    # Save statistics to JSON
+    print("Saving statistics to JSON...")
+    save_start = time.time()
+    with open(json_out_path, "w") as f:
+        json.dump(global_stats, f, indent=2)
+    print(f"Statistics saved to {json_out_path} in {time.time() - save_start:.2f} seconds.")
 
     print(f"Total computation time: {time.time() - start_time:.2f} seconds.")
 
