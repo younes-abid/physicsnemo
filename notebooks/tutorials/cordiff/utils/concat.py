@@ -97,7 +97,116 @@ def write_combined_dataset(output_file, combined_input, combined_output, combine
                     invariant_group.createVariable(var, "f4", dims)[:] = data
 
         print(f"Combined dataset saved to {output_file}")
-
+    else:
+        print(f"Appending to combined dataset in {output_file}...")
+        
+        # Create a temporary file for the new combined data
+        temp_file = output_file + ".temp"
+        
+        with Dataset(output_file, "r", format="NETCDF4") as src, Dataset(temp_file, "w", format="NETCDF4") as dst:
+            # Get current number of samples
+            current_samples = src.dimensions["sample"].size
+            new_samples = len(time_array)
+            total_samples = current_samples + new_samples
+            
+            # Copy dimensions
+            for dim_name, dim in src.dimensions.items():
+                if dim_name == "sample":
+                    dst.createDimension(dim_name, total_samples)
+                else:
+                    dst.createDimension(dim_name, dim.size)
+            
+            # Copy global attributes
+            for attr_name in src.ncattrs():
+                setattr(dst, attr_name, getattr(src, attr_name))
+            
+            # Copy and append time variable
+            time_var_src = src.variables["time"]
+            time_var_dst = dst.createVariable("time", time_var_src.datatype, time_var_src.dimensions)
+            time_var_dst[:current_samples] = time_var_src[:]
+            time_var_dst[current_samples:] = time_array.astype("datetime64[s]").astype(float)
+            for attr_name in time_var_src.ncattrs():
+                setattr(time_var_dst, attr_name, getattr(time_var_src, attr_name))
+            
+            # Copy and append coord variable
+            coord_var_src = src.variables["coord"]
+            coord_var_dst = dst.createVariable("coord", coord_var_src.datatype, coord_var_src.dimensions)
+            coord_var_dst[:current_samples] = coord_var_src[:]
+            coord_var_dst[current_samples:] = np.full((new_samples, 2), 1)
+            for attr_name in coord_var_src.ncattrs():
+                setattr(coord_var_dst, attr_name, getattr(coord_var_src, attr_name))
+            
+            # Process input group
+            src_input = src.groups["input"]
+            dst_input = dst.createGroup("input")
+            
+            # Copy input dimensions
+            for dim_name, dim in src_input.dimensions.items():
+                if dim_name == "sample":
+                    dst_input.createDimension(dim_name, total_samples)
+                else:
+                    dst_input.createDimension(dim_name, dim.size)
+            
+            # Copy and append input variables
+            for var_name in src_input.variables:
+                var_src = src_input.variables[var_name]
+                var_dst = dst_input.createVariable(var_name, var_src.datatype, var_src.dimensions)
+                var_dst[:current_samples] = var_src[:]
+                
+                # Append new data if this variable exists in the new batch
+                if var_name in combined_input.data_vars:
+                    var_dst[current_samples:] = combined_input[var_name].values
+                
+                for attr_name in var_src.ncattrs():
+                    setattr(var_dst, attr_name, getattr(var_src, attr_name))
+            
+            # Process output group
+            src_output = src.groups["output"]
+            dst_output = dst.createGroup("output")
+            
+            # Copy output dimensions
+            for dim_name, dim in src_output.dimensions.items():
+                if dim_name == "sample":
+                    dst_output.createDimension(dim_name, total_samples)
+                else:
+                    dst_output.createDimension(dim_name, dim.size)
+            
+            # Copy and append output variables
+            for var_name in src_output.variables:
+                var_src = src_output.variables[var_name]
+                var_dst = dst_output.createVariable(var_name, var_src.datatype, var_src.dimensions)
+                var_dst[:current_samples] = var_src[:]
+                
+                # Append new data if this variable exists in the new batch
+                if var_name in combined_output.data_vars:
+                    var_dst[current_samples:] = combined_output[var_name].values
+                
+                for attr_name in var_src.ncattrs():
+                    setattr(var_dst, attr_name, getattr(var_src, attr_name))
+            
+            # Process invariant group if it exists
+            if "invariant" in src.groups and combined_invariant is not None:
+                src_invariant = src.groups["invariant"]
+                dst_invariant = dst.createGroup("invariant")
+                
+                # Copy invariant dimensions
+                for dim_name, dim in src_invariant.dimensions.items():
+                    dst_invariant.createDimension(dim_name, dim.size)
+                
+                # Copy invariant variables
+                for var_name in src_invariant.variables:
+                    var_src = src_invariant.variables[var_name]
+                    var_dst = dst_invariant.createVariable(var_name, var_src.datatype, var_src.dimensions)
+                    var_dst[:] = var_src[:]
+                    
+                    for attr_name in var_src.ncattrs():
+                        setattr(var_dst, attr_name, getattr(var_src, attr_name))
+        
+        # Replace the original file with the temporary file
+        os.remove(output_file)
+        os.rename(temp_file, output_file)
+        
+        print(f"Data successfully appended to {output_file}")
 
 def concat(IN_DIR, OUTPUT_FILE, MULTIPLE_OF, PAD_VALUE, chunk_size=100, end=-1):
     """
