@@ -28,16 +28,27 @@ def pad_to_multiple_of(ds, dim_y, dim_x, multiple_of, pad_value):
     pad_x = new_x - ds.sizes[dim_x]
     return ds.pad({dim_y: (0, pad_y), dim_x: (0, pad_x)}, constant_values=pad_value)
 
+# Function to cut dimensions to the nearest multiple
+def cut_to_multiple_of(ds, dim_y, dim_x, multiple_of):
+    new_y = (ds.sizes[dim_y] // multiple_of) * multiple_of
+    new_x = (ds.sizes[dim_x] // multiple_of) * multiple_of
+    return ds.isel({dim_y: slice(0, new_y), dim_x: slice(0, new_x)})
 
 # Function to process a single file
-def process_file(file, multiple_of, pad_value):
+def process_file(file, multiple_of, pad_value, mode="cut"):
+    # mode can be "cut" or "pad"
     print(f"Processing file: {file}")
     input_ds = xr.open_dataset(file, group="input")
     output_ds = xr.open_dataset(file, group="output")
 
     # Pad input and output datasets
-    input_ds = pad_to_multiple_of(input_ds, "y_lr", "x_lr", multiple_of, pad_value)
-    output_ds = pad_to_multiple_of(output_ds, "y_hr", "x_hr", multiple_of, pad_value)
+    if mode == "pad":
+        input_ds = pad_to_multiple_of(input_ds, "y_lr", "x_lr", multiple_of, pad_value)
+        output_ds = pad_to_multiple_of(output_ds, "y_hr", "x_hr", multiple_of, pad_value)
+    elif mode == "cut":
+        # Cut input and output datasets
+        input_ds = cut_to_multiple_of(input_ds, "y_lr", "x_lr", multiple_of)
+        output_ds = cut_to_multiple_of(output_ds, "y_hr", "x_hr", multiple_of)
 
     # Check for invariant group
     try:
@@ -223,7 +234,7 @@ def write_combined_dataset(output_file, combined_input, combined_output, combine
         print(f"Data successfully appended to {output_file}")
 
 
-def concat(chunk, IN_DIR, OUT_DIR, MULTIPLE_OF, PAD_VALUE):
+def concat(chunk, IN_DIR, OUT_DIR, MULTIPLE_OF, PAD_VALUE, MODE):
     """
     Concatenates NetCDF files corresponding to a list of dates (chunk), saves the result, 
     and removes the processed files from the input directory.
@@ -234,6 +245,7 @@ def concat(chunk, IN_DIR, OUT_DIR, MULTIPLE_OF, PAD_VALUE):
         OUT_DIR (str): Path to the directory where the concatenated file will be saved.
         MULTIPLE_OF (int): Padding multiple for dimensions.
         PAD_VALUE (int): Value to use for padding.
+        MODE (str): Mode for handling dimensions, either "cut" or "pad".
     """
     # Generate the output file path
     output_file = f"{OUT_DIR}/{chunk[0]}_{chunk[-1]}_{len(chunk)}.nc"
@@ -260,7 +272,7 @@ def concat(chunk, IN_DIR, OUT_DIR, MULTIPLE_OF, PAD_VALUE):
     # Process each file in the chunk
     for file in files_to_process:
         try:
-            input_ds, output_ds, invariant_ds, file_time_values = process_file(file, MULTIPLE_OF, PAD_VALUE)
+            input_ds, output_ds, invariant_ds, file_time_values = process_file(file, MULTIPLE_OF, PAD_VALUE, MODE)
             input_datasets.append(input_ds)
             output_datasets.append(output_ds)
             if invariant_ds is not None:

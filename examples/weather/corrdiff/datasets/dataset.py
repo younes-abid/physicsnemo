@@ -164,6 +164,7 @@ def init_dataset_from_config(
         num_replicas=dist.world_size,
         seed=seed,
         start_idx=sampler_start_idx,
+        shuffle=True
     )
 
     dataset_iterator = iter(

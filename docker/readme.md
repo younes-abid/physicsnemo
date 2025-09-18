@@ -28,7 +28,8 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 To run Tensorboard, you can use the following command:
 
 ```bash
-tensorboard --logdir=tensorboard --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/regression --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
 ```

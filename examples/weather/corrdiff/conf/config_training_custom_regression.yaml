@@ -85,7 +85,7 @@ training:
         lr:  0.001
         grad_clip_threshold: 4 # null # Simulate a larger batch size
         lr_decay: 0.9
-        lr_rampup: 100
+        lr_rampup: 1000
         lr_decay_rate: 50000.0
     perf:
         fp_optimizations: fp32
@@ -102,16 +102,21 @@ training:
         metric_log_freq: 1
         image_log_freq: 5000
         save_checkpoint_freq: 5000
-        save_n_recent_checkpoints: -1
+        save_n_recent_checkpoints: 10
         validation_freq: 500
         validation_steps: 100
         load_optimizer: False
+
+# parameters for tensorboard logging
+tensorboard:
+    log_dir: /app/tensorboard/regression
+    # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb_regression"
+    results_dir: "/app/wandb/regression"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

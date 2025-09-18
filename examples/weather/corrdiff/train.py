@@ -114,7 +114,7 @@ def initialize_loggers(dist, cfg) -> tuple:
     """Initialize all loggers including TensorBoard, Python logger, and WandB."""
     writer = None
     if dist.rank == 0:
-        writer = SummaryWriter(log_dir="tensorboard")
+        writer = SummaryWriter(log_dir=cfg.tensorboard.log_dir)
     
     logger = PythonLogger("main")
     logger0 = RankZeroLoggingWrapper(logger, dist)
@@ -1176,8 +1176,8 @@ def main(cfg: DictConfig) -> None:
                     cfg, dist, logger0, checkpoint_dir, model, optimizer, cur_nimg, done
                 )
 
-    # Cleanup checkpoints
-    cleanup_checkpoints_block(cfg, checkpoint_dir, dist)
+                # Cleanup checkpoints
+                cleanup_checkpoints_block(cfg, checkpoint_dir, dist)
 
     # Done.
     logger0.info("Training Completed.")    

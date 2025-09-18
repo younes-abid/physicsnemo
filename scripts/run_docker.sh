@@ -18,8 +18,7 @@ docker run -it --rm \
     -v "$(pwd)/outputs:/app/outputs" \
     -v "$(pwd)/outputs/checkpoints_regression:/app/checkpoints_regression" \
     -v "$(pwd)/outputs/checkpoints_diffusion:/app/checkpoints_diffusion" \
-    -v "$(pwd)/outputs/wandb_regression:/app/wandb_regression" \
-    -v "$(pwd)/outputs/wandb_diffusion:/app/wandb_diffusion" \
+    -v "$(pwd)/outputs/wandb:/app/wandb" \
     -v "$(pwd)/outputs/tensorboard:/app/tensorboard" \
     physiscsnemo:latest
 
