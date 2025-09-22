@@ -67,6 +67,15 @@ dataset:
     output_variables: ["U10", "V10"]
     invariant_variables: []  # Optional: leave empty if not used
 
+validation:
+    data_path: /app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_validation.nc
+    # Path to .nc data file
+    stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
+    # Path to json stats file
+    input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
+    output_variables: ["U10", "V10"]
+    invariant_variables: []  # Optional: leave empty if not used
+
 # Training parameters
 training:
     hp:
@@ -79,6 +88,15 @@ training:
         lr_decay: 1
         lr_rampup: 0
         lr_decay_rate: 500000.0
+    perf:
+        fp_optimizations: fp32
+        # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
+        # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
+        dataloader_workers: 4
+        songunet_checkpoint_level: 0
+
+        use_gpu: true
+        num_gpus: -1  # Use all available GPUs
     io:
         print_progress_freq: 500
         regression_checkpoint_path: /app/checkpoints_regression/UNet.0.180000.mdlus
@@ -88,7 +106,7 @@ training:
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: 10
         validation_freq: 500
-        validation_steps: 10
+        validation_steps: 100
         load_optimizer: False
 
 # parameters for tensorboard logging
@@ -100,7 +118,7 @@ tensorboard:
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb_diffusion"
+    results_dir: "/app/wandb/diffusion"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients
