@@ -33,3 +33,6 @@ tensorboard --logdir=/app/tensorboard/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
 ```
+
+# Related documentation:
+ - [../examples/generative/README.md](../examples/generative/README.md)

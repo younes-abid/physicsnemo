@@ -555,7 +555,8 @@ class ResidualLoss:
             Callable[[Tensor], Tuple[Tensor, Optional[Tensor]]]
         ] = None,
         use_patch_grad_acc: bool = False,
-    ) -> Tensor:
+        return_predictions: bool = False,
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         """
         Calculate and return the loss for denoising score matching.
 
@@ -640,6 +641,9 @@ class ResidualLoss:
         use_patch_grad_acc: bool, optional
             A boolean flag indicating whether to enable multi-iterations of patching accumulations
             for amortizing regression cost. Default False.
+        return_predictions : bool, optional
+            If True, return both the loss and the predictions (D_yn).
+            Default is False.
 
         Returns
         -------
@@ -649,6 +653,8 @@ class ResidualLoss:
             If patching is used:
                 A tensor of shape (B*P, C_hr, H_patch, W_patch) representing
                 the per-patch loss.
+            If `return_predictions` is False, returns the loss tensor.
+            If `return_predictions` is True, returns a tuple of (loss, predictions).
 
         Raises
         ------
@@ -775,6 +781,9 @@ class ResidualLoss:
             )
         loss = weight * ((D_yn - y) ** 2)
 
+        # Return loss and predictions if requested
+        if return_predictions:
+            return loss, D_yn
         return loss
 
 

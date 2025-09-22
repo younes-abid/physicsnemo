@@ -80,13 +80,21 @@ training:
         lr_rampup: 0
         lr_decay_rate: 500000.0
     io:
-        print_progress_freq: 100
+        print_progress_freq: 500
         regression_checkpoint_path: /app/checkpoints_regression/UNet.0.180000.mdlus
+        metric_log_freq: 1
+        image_log_freq: 5000
         # Path to load the regression checkpoint
-        save_checkpoint_freq: 500
-        save_n_recent_checkpoints: -1
+        save_checkpoint_freq: 5000
+        save_n_recent_checkpoints: 10
         validation_freq: 500
         validation_steps: 10
+        load_optimizer: False
+
+# parameters for tensorboard logging
+tensorboard:
+    log_dir: /app/tensorboard/diffusion
+    # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
