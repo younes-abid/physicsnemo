@@ -79,20 +79,20 @@ validation:
 # Training parameters
 training:
     hp:
-        training_duration: 8000000
+        training_duration: 2000000
         # Training duration based on the number of processed samples
-        total_batch_size: 8
-        batch_size_per_gpu: 1
-        lr: 0.0002
-        grad_clip_threshold: null
-        lr_decay: 1
-        lr_rampup: 0
-        lr_decay_rate: 500000.0
+        total_batch_size: 24
+        batch_size_per_gpu: 3
+        lr: 0.0003
+        grad_clip_threshold: 2.0
+        lr_decay: 0.9
+        lr_rampup: 1000
+        lr_decay_rate: 50000.0
     perf:
         fp_optimizations: fp32
         # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
         # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
-        dataloader_workers: 4
+        dataloader_workers: 32
         songunet_checkpoint_level: 0
 
         use_gpu: true
