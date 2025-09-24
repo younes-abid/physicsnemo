@@ -9,6 +9,7 @@ docker run -it --rm \
     --shm-size=8g \
     -p 8888:8888 \
     -p 6006:6006 \
+    -p 8501:8501 \
     -v "$(pwd)/examples:/app/examples" \
     -v "$(pwd)/physicsnemo:/app/physicsnemo" \
     -v "$(pwd)/data:/app/data" \
