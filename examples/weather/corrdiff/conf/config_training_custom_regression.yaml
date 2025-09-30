@@ -45,7 +45,7 @@ defaults:
     #     `lt_aware_patched_diffusion`: similar to `patched_diffusion` but
     #       with lead time conditioning
 
-    - model_size: mini
+    - model_size: normal
     # The model size configuration.
     # Accepted values:
     #     `normal`: normal model size

@@ -45,7 +45,7 @@ defaults:
     #     `lt_aware_patched_diffusion`: similar to `patched_diffusion` but
     #       with lead time conditioning
 
-    - model_size: mini
+    - model_size: normal
     # The model size configuration.
     # Accepted values:
     #     `normal`: normal model size
@@ -83,11 +83,11 @@ training:
         # Training duration based on the number of processed samples
         total_batch_size: 24
         batch_size_per_gpu: 3
-        lr: 0.0003
+        lr: 0.00005 #0.00005, 
         grad_clip_threshold: 2.0
         lr_decay: 0.9
-        lr_rampup: 1000
-        lr_decay_rate: 50000.0
+        lr_rampup: 10000 #10000 
+        lr_decay_rate: 20000.0
     perf:
         fp_optimizations: fp32
         # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
