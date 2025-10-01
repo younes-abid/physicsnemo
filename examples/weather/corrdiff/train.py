@@ -726,10 +726,10 @@ def log_images(writer, cur_nimg, dist, images):
             writer.add_image(title, pred_vs_target[0], global_step=cur_nimg)  # Log the first image in the batch        
 
 def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, input_dtype,
-                           model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
-                           enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
-                           average_loss_running_mean, n_average_loss_running_mean,
-                           optimizer, cur_nimg, done, compute_metrics_flag=True):
+                             model, loss_fn, use_patch_grad_acc, patching, patch_nums_iter,
+                             enable_amp, amp_dtype, batch_size_per_gpu, num_accumulation_rounds,
+                             average_loss_running_mean, n_average_loss_running_mean,
+                             optimizer, cur_nimg, done, compute_metrics_flag=True):
     """Refactored training iteration block with metrics computation."""
     with nvtx.annotate("Training iteration", color="green"):
         # Reset gradients
@@ -753,7 +753,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         # Log metrics
         log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics)
         
-        #Log images
+        # Log images
         if cur_nimg % cfg.training.io.image_log_freq == 0 and images:
             log_images(writer, cur_nimg, dist, images)
         
@@ -777,6 +777,17 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
                 model,
                 grad_clip_threshold=cfg.training.hp.grad_clip_threshold,
             )
+            
+            # Log gradient statistics
+            if dist.rank == 0 and cur_nimg % cfg.training.io.grad_log_freq == 0:  # Only log from rank 0
+                total_grad_norm = 0.0
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        grad_norm = param.grad.norm(2).item()  # Compute L2 norm of gradients
+                        total_grad_norm += grad_norm ** 2
+                        writer.add_scalar(f"grad_norm/{name}", grad_norm, cur_nimg)
+                total_grad_norm = total_grad_norm ** 0.5
+                writer.add_scalar("grad_norm/total", total_grad_norm, cur_nimg)
         
         with nvtx.annotate("optimizer step", color="blue"):
             optimizer.step()

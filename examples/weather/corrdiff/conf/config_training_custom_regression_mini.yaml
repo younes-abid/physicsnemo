@@ -45,7 +45,7 @@ defaults:
     #     `lt_aware_patched_diffusion`: similar to `patched_diffusion` but
     #       with lead time conditioning
 
-    - model_size: normal
+    - model_size: mini
     # The model size configuration.
     # Accepted values:
     #     `normal`: normal model size
@@ -80,18 +80,18 @@ validation:
 training:
     hp:
         training_duration: 2000000 # Training duration based on the number of processed samples
-        total_batch_size: 16
-        batch_size_per_gpu: 2 # Set explicitly to avoid "auto" issues
-        lr:  0.0005
-        grad_clip_threshold: 1.0 # null # Simulate a larger batch size
+        total_batch_size: 8
+        batch_size_per_gpu: 1 # Set explicitly to avoid "auto" issues
+        lr:  0.0001
+        grad_clip_threshold: 4 # null # Simulate a larger batch size
         lr_decay: 0.9
-        lr_rampup: 5000
+        lr_rampup: 1000
         lr_decay_rate: 50000.0
     perf:
-        fp_optimizations: amp-fp32
+        fp_optimizations: fp32
         # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
         # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
-        dataloader_workers: 32
+        dataloader_workers: 4
         songunet_checkpoint_level: 0
 
         use_gpu: true
@@ -100,7 +100,6 @@ training:
         regression_checkpoint_path: null
         print_progress_freq: 500
         metric_log_freq: 1
-        grad_log_freq: 500
         image_log_freq: 5000
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: 10

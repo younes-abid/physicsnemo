@@ -114,7 +114,7 @@ def initialize_loggers(dist, cfg) -> tuple:
     """Initialize all loggers including TensorBoard, Python logger, and WandB."""
     writer = None
     if dist.rank == 0:
-        writer = SummaryWriter(log_dir="tensorboard")
+        writer = SummaryWriter(log_dir=cfg.tensorboard.log_dir)
     
     logger = PythonLogger("main")
     logger0 = RankZeroLoggingWrapper(logger, dist)
@@ -509,6 +509,21 @@ def compute_metrics(predictions: torch.Tensor, targets: torch.Tensor, prefix: st
         p = p[mask]
         t = t[mask]
         
+        # TODO add CRP continuous rank probability score
+        # TODO add KLD kullback-leibler divergence
+        
+        
+        # Compute mean and std errors
+        pred_mean = torch.mean(p)
+        target_mean = torch.mean(t)
+        pred_std = torch.std(p)
+        target_std = torch.std(t)
+
+        metrics[f'{prefix}mean_error_{var}'] = torch.abs(pred_mean - target_mean)
+        metrics[f'{prefix}std_error_{var}'] = torch.abs(pred_std - target_std)
+        metrics[f'{prefix}relative_mean_error_{var}'] = torch.abs(pred_mean - target_mean) / (torch.abs(target_mean) + 1e-8)
+        metrics[f'{prefix}relative_std_error_{var}'] = torch.abs(pred_std - target_std) / (torch.abs(target_std) + 1e-8)
+        
         # Basic regression metrics
         metrics[f'{prefix}mae_{var}'] = torch.mean(torch.abs(p - t))
         metrics[f'{prefix}mse_{var}'] = torch.mean((p - t) ** 2)
@@ -586,7 +601,8 @@ def aggregate_metrics(all_metrics, dist):
 
 def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
                                    use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-                                   batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag=True):
+                                   batch_size_per_gpu, num_accumulation_rounds, cfg, cur_nimg,
+                                   compute_metrics_flag=True):
     """Accumulate gradients and compute metrics over multiple rounds."""
     loss_accum = 0
     all_metrics = []
@@ -629,14 +645,16 @@ def accumulate_gradients_and_metrics(model, loss_fn, dataset_iterator, use_apex_
         with torch.no_grad():
             predictions_cat = torch.cat(all_predictions)
             targets_cat = torch.cat(all_targets)
-            metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
-                                      variables=cfg.dataset.output_variables)
-            images = prepare_images(predictions_cat=predictions_cat,
-            targets_cat=targets_cat,
-            prefix="training_",
-            variables=cfg.dataset.output_variables,
-            n=1
-        )
+            if cur_nimg % cfg.training.io.metric_log_freq == 0:
+                metrics = compute_metrics(predictions_cat, targets_cat, prefix="training_", 
+                                        variables=cfg.dataset.output_variables)
+            if cur_nimg % cfg.training.io.image_log_freq == 0:
+                images = prepare_images(predictions_cat=predictions_cat,
+                                        targets_cat=targets_cat,
+                                        prefix="training_",
+                                        variables=cfg.dataset.output_variables,
+                                        n=1
+                                    )
     
     return loss_accum, metrics, images
 
@@ -721,7 +739,7 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         loss_accum, metrics, images = accumulate_gradients_and_metrics(
             model, loss_fn, dataset_iterator, use_apex_gn, dist, input_dtype,
             use_patch_grad_acc, patching, patch_nums_iter, enable_amp, amp_dtype,
-            batch_size_per_gpu, num_accumulation_rounds, cfg, compute_metrics_flag
+            batch_size_per_gpu, num_accumulation_rounds, cfg, cur_nimg, compute_metrics_flag,
         )
         
         # Aggregate loss across processes
@@ -736,7 +754,8 @@ def training_iteration_block(cfg, dist, writer, dataset_iterator, use_apex_gn, i
         log_training_metrics(writer, average_loss, average_loss_running_mean, cur_nimg, dist, metrics)
         
         #Log images
-        log_images(writer, cur_nimg, dist, images)
+        if cur_nimg % cfg.training.io.image_log_freq == 0 and images:
+            log_images(writer, cur_nimg, dist, images)
         
         # Check for periodic tasks
         ptt = is_time_for_periodic_task(
@@ -1078,16 +1097,16 @@ def main(cfg: DictConfig) -> None:
     # Load optimizer checkpoint
     if dist.world_size > 1:
         torch.distributed.barrier()
-    try:
-        load_checkpoint(
-            path=checkpoint_dir,
-            optimizer=optimizer,
-            device=dist.device,
-        )
-    except Exception:
-        pass
-    
-
+    if cfg.training.io.get("load_optimizer", True):
+        try:
+            load_checkpoint(
+                path=checkpoint_dir,
+                optimizer=optimizer,
+                device=dist.device,
+            )
+        except Exception:
+            pass
+        
     ############################################################################
     #                            MAIN TRAINING LOOP                            #
     ############################################################################
@@ -1157,8 +1176,8 @@ def main(cfg: DictConfig) -> None:
                     cfg, dist, logger0, checkpoint_dir, model, optimizer, cur_nimg, done
                 )
 
-    # Cleanup checkpoints
-    cleanup_checkpoints_block(cfg, checkpoint_dir, dist)
+                # Cleanup checkpoints
+                cleanup_checkpoints_block(cfg, checkpoint_dir, dist)
 
     # Done.
     logger0.info("Training Completed.")    
