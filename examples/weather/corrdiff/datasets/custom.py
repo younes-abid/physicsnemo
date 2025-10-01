@@ -76,34 +76,36 @@ class CustomDataset(DownscalingDataset):
         """Return the data sample (output, input) at index idx."""
         x = self.upsample(self.input[idx].copy())
         y = self.output[idx]
+        # ########################################
+        # ########### resize to 448x448 ##########
+        # ########################################
         
-        print('='*80, flush=True)
-        # Log original shapes
-        print(f"Original x shape: {x.shape}, Original y shape: {y.shape}", flush=True)
+        # # Debugging logs
+        # print('='*80, flush=True)
+        # # Log original shapes
+        # print(f"Original x shape: {x.shape}, Original y shape: {y.shape}", flush=True)
         
-        # Convert NumPy arrays to PyTorch tensors
-        x = torch.from_numpy(x).float()
-        y = torch.from_numpy(y).float()
+        # # Convert NumPy arrays to PyTorch tensors
+        # x = torch.from_numpy(x).float()
+        # y = torch.from_numpy(y).float()
 
-        # Log tensor shapes before resizing
-        print(f"Tensor x shape before resize: {x.shape}, Tensor y shape before resize: {y.shape}", flush=True)
+        # # Log tensor shapes before resizing
+        # print(f"Tensor x shape before resize: {x.shape}, Tensor y shape before resize: {y.shape}", flush=True)
             
-        # Resize tensors to 448x448
-        resize = Resize((448, 448))
-        x = resize(x)
-        y = resize(y)
-        # Log tensor shapes after resizing
-        print(f"Tensor x shape after resize: {x.shape}, Tensor y shape after resize: {y.shape}", flush=True)
+        # # Resize tensors to 448x448
+        # resize = Resize((448, 448))
+        # x = resize(x)
+        # y = resize(y)
+        # # Log tensor shapes after resizing
+        # print(f"Tensor x shape after resize: {x.shape}, Tensor y shape after resize: {y.shape}", flush=True)
         
-        # convert back to numpy
-        x = x.numpy()
-        y = y.numpy()
+        # # convert back to numpy
+        # x = x.numpy()
+        # y = y.numpy()
         
+        # ########################################
         x = self.normalize_input(x)
         y = self.normalize_output(y)
-        
-        # Log final shapes
-        print(f"Final x shape: {x.shape}, Final y shape: {y.shape}", flush=True)
         return (y, x)
 
     def __len__(self):

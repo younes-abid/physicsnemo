@@ -30,9 +30,74 @@ def pad_to_multiple_of(ds, dim_y, dim_x, multiple_of, pad_value):
 
 # Function to cut dimensions to the nearest multiple
 def cut_to_multiple_of(ds, dim_y, dim_x, multiple_of):
+    """
+    Cuts the dimensions of a dataset to the nearest multiple of a specified value.
+
+    This function trims the dataset along the specified dimensions (`dim_y` and `dim_x`)
+    so that their sizes become the largest multiples of `multiple_of` that are less than
+    or equal to their original sizes. The trimming is balanced, with 50% of the cut
+    applied at the beginning and 50% at the end of the dimensions. If the number of
+    pixels to be cut is odd, the beginning gets one more pixel than the end.
+
+    Args:
+        ds (xarray.Dataset or xarray.DataArray): The input dataset or data array to be trimmed.
+        dim_y (str): The name of the vertical dimension to be trimmed (e.g., "y", "latitude").
+        dim_x (str): The name of the horizontal dimension to be trimmed (e.g., "x", "longitude").
+        multiple_of (int): The value to which the dimensions should be trimmed as a multiple.
+
+    Returns:
+        xarray.Dataset or xarray.DataArray: The trimmed dataset or data array.
+
+    Example:
+        >>> import xarray as xr
+        >>> import numpy as np
+        >>> # Create a sample dataset with dimensions 443x447
+        >>> data = np.random.rand(443, 447)
+        >>> ds = xr.DataArray(data, dims=["y", "x"], coords={"y": np.arange(443), "x": np.arange(447)})
+        >>> print(f"Original shape: {ds.shape}")
+        >>> # Trim the dataset to the nearest multiple of 16
+        >>> trimmed_ds = cut_to_multiple_of(ds, "y", "x", 16)
+        >>> print(f"Trimmed shape: {trimmed_ds.shape}")
+        
+        Output:
+        Original shape: (443, 447)
+        Trimmed shape: (432, 432)
+        
+    Example debugging:
+        If the dataset has dimensions dim_y=443 and dim_x=447, and multiple_of=16:
+
+        New dimensions:
+            new_y = (443 // 16) * 16 = 432
+            new_x = (447 // 16) * 16 = 432
+        Pixels to cut:
+            cut_y = 443 - 432 = 11
+            cut_x = 447 - 432 = 15
+        Split the cuts:
+            cut_y_begin = 11 // 2 = 5, cut_y_end = 11 - 5 = 6
+            cut_x_begin = 15 // 2 = 7, cut_x_end = 15 - 7 = 8
+        Resulting slices:
+            dim_y: slice(5, 437) (cut 5 pixels from the beginning and 6 from the end)
+            dim_x: slice(7, 439) (cut 7 pixels from the beginning and 8 from the end)
+    """
+    # Calculate the new dimensions
     new_y = (ds.sizes[dim_y] // multiple_of) * multiple_of
     new_x = (ds.sizes[dim_x] // multiple_of) * multiple_of
-    return ds.isel({dim_y: slice(0, new_y), dim_x: slice(0, new_x)})
+
+    # Calculate the number of pixels to cut
+    cut_y = ds.sizes[dim_y] - new_y
+    cut_x = ds.sizes[dim_x] - new_x
+
+    # Split the cut pixels between the beginning and the end
+    cut_y_begin = cut_y // 2
+    cut_y_end = cut_y - cut_y_begin  # Ensure the total cut is correct
+    cut_x_begin = cut_x // 2
+    cut_x_end = cut_x - cut_x_begin  # Ensure the total cut is correct
+
+    # Apply the cuts
+    return ds.isel({
+        dim_y: slice(cut_y_begin, ds.sizes[dim_y] - cut_y_end),
+        dim_x: slice(cut_x_begin, ds.sizes[dim_x] - cut_x_end)
+    })
 
 # Function to process a single file
 def process_file(file, multiple_of, pad_value, mode="cut"):
