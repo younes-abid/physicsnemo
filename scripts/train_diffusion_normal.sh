@@ -42,7 +42,7 @@ if (( training_duration > highest_checkpoint )); then
         --config-name=config_training_custom_diffusion_normal
 
 else
-    echo "Training duration is greater than or equal to the highest checkpoint. Skipping training."
+    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
 fi
 
 # 2. Train on files 1,2,3
@@ -73,7 +73,7 @@ if (( training_duration > highest_checkpoint )); then
         training.io.load_optimizer=False \
         --config-name=config_training_custom_diffusion_normal
 else
-    echo "Training duration is greater than or equal to the highest checkpoint. Skipping training."
+    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
 fi
 # 3. Train on files 4,5,6
 echo "--------------------------------------"
@@ -103,7 +103,7 @@ if (( training_duration > highest_checkpoint )); then
         training.io.load_optimizer=False \
         --config-name=config_training_custom_diffusion_normal
 else
-    echo "Training duration is greater than or equal to the highest checkpoint. Skipping training."
+    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
 fi
 
 # 4. Train on files 7,8,9
@@ -134,7 +134,7 @@ if (( training_duration > highest_checkpoint )); then
         training.io.load_optimizer=False \
         --config-name=config_training_custom_diffusion_normal
 else
-    echo "Training duration is greater than or equal to the highest checkpoint. Skipping training."
+    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
 fi
 # 5. Train on files 10,11
 echo "--------------------------------------"
@@ -163,5 +163,5 @@ if (( training_duration > highest_checkpoint )); then
         training.io.load_optimizer=False \
         --config-name=config_training_custom_diffusion_normal
 else
-    echo "Training duration is greater than or equal to the highest checkpoint. Skipping training."
+    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
 fi
