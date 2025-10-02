@@ -149,7 +149,7 @@ if (( training_duration > highest_checkpoint )); then
         dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
         dataset.data_path="[ \
             $F10, \
-            $F11' \
+            $F11 \
         ]" \
         validation.data_path="[ \
             $VAL \
@@ -164,4 +164,4 @@ if (( training_duration > highest_checkpoint )); then
         --config-name=config_training_custom_diffusion_normal
 else
     echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
+fi 
