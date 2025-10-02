@@ -83,7 +83,7 @@ training:
         total_batch_size: 16
         batch_size_per_gpu: 2 # Set explicitly to avoid "auto" issues
         lr:  0.0005
-        grad_clip_threshold: 1.0 # null # Simulate a larger batch size
+        grad_clip_threshold: null # null # 10000.0 # Gradient clipping threshold; set to null to disable
         lr_decay: 0.9
         lr_rampup: 5000
         lr_decay_rate: 50000.0
@@ -100,8 +100,8 @@ training:
         regression_checkpoint_path: null
         print_progress_freq: 500
         metric_log_freq: 1
-        grad_log_freq: 500
-        image_log_freq: 5000
+        grad_log_freq: 400
+        image_log_freq: 4000
         save_checkpoint_freq: 5000
         save_n_recent_checkpoints: 10
         validation_freq: 500

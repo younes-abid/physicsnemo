@@ -1,0 +1,1 @@
+rm -r /app/checkpoints_regression/* /app/tensorboard/regression/* /app/wandb/regression/*
