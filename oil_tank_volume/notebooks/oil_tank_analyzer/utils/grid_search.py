@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from oil_tank_analyzer.core.config import PipelineConfig, DenoisingConfig, ContourConfig, CircleDetectionConfig
 from oil_tank_analyzer.pipelines.tank_pipeline import TankAnalysisPipeline
+import copy
 
 class PipelineGridSearch:
     """Enhanced grid search for finding optimal pipeline configuration with SAR optimizations."""
@@ -129,10 +130,20 @@ class PipelineGridSearch:
                     for dp in denoise_param_combos[:max_combos]:
                         for ep in edge_param_combos[:max_combos]:
                             for cp in circle_param_combos[:max_combos]:
+                                # FIX: Create DEEP copies of all parameters to avoid reference sharing
                                 config = PipelineConfig(
-                                    denoising=DenoisingConfig(method=denoise_method, params=dp),
-                                    contour_detection=ContourConfig(method=edge_method, params=ep),
-                                    circle_detection=CircleDetectionConfig(method=circle_method, params=cp)
+                                    denoising=DenoisingConfig(
+                                        method=denoise_method, 
+                                        params=copy.deepcopy(dp)  # Deep copy params
+                                    ),
+                                    contour_detection=ContourConfig(
+                                        method=edge_method, 
+                                        params=copy.deepcopy(ep)  # Deep copy params
+                                    ),
+                                    circle_detection=CircleDetectionConfig(
+                                        method=circle_method, 
+                                        params=copy.deepcopy(cp)  # Deep copy params
+                                    )
                                 )
                                 configs.append(config)
         
@@ -153,10 +164,20 @@ class PipelineGridSearch:
             for dp in self._sample_parameters(denoise_params, 2):
                 for ep in self._sample_parameters(edge_params, 2):
                     for cp in self._sample_parameters(circle_params, 2):
+                        # FIX: Create DEEP copies
                         config = PipelineConfig(
-                            denoising=DenoisingConfig(method=denoise_method, params=dp),
-                            contour_detection=ContourConfig(method=edge_method, params=ep),
-                            circle_detection=CircleDetectionConfig(method=circle_method, params=cp)
+                            denoising=DenoisingConfig(
+                                method=denoise_method, 
+                                params=copy.deepcopy(dp)
+                            ),
+                            contour_detection=ContourConfig(
+                                method=edge_method, 
+                                params=copy.deepcopy(ep)
+                            ),
+                            circle_detection=CircleDetectionConfig(
+                                method=circle_method, 
+                                params=copy.deepcopy(cp)
+                            )
                         )
                         configs.append(config)
         
@@ -172,11 +193,20 @@ class PipelineGridSearch:
         configs = []
         
         for denoise_method, edge_method, circle_method in self.recommended_combinations:
-            # Use default parameters for recommended combinations
+            # FIX: Create new objects each time
             config = PipelineConfig(
-                denoising=DenoisingConfig(method=denoise_method, params={}),
-                contour_detection=ContourConfig(method=edge_method, params={}),
-                circle_detection=CircleDetectionConfig(method=circle_method, params={})
+                denoising=DenoisingConfig(
+                    method=denoise_method, 
+                    params={}  # Empty dict, no need to copy
+                ),
+                contour_detection=ContourConfig(
+                    method=edge_method, 
+                    params={}  # Empty dict, no need to copy
+                ),
+                circle_detection=CircleDetectionConfig(
+                    method=circle_method, 
+                    params={}  # Empty dict, no need to copy
+                )
             )
             configs.append(config)
         
@@ -200,10 +230,20 @@ class PipelineGridSearch:
             edge_params = self._sample_parameters(self.param_grid['edge_detection'][edge_method], 1)[0]
             circle_params = self._sample_parameters(self.param_grid['circle_detection'][circle_method], 1)[0]
             
+            # FIX: Create DEEP copies
             config = PipelineConfig(
-                denoising=DenoisingConfig(method=denoise_method, params=denoise_params),
-                contour_detection=ContourConfig(method=edge_method, params=edge_params),
-                circle_detection=CircleDetectionConfig(method=circle_method, params=circle_params)
+                denoising=DenoisingConfig(
+                    method=denoise_method, 
+                    params=copy.deepcopy(denoise_params)
+                ),
+                contour_detection=ContourConfig(
+                    method=edge_method, 
+                    params=copy.deepcopy(edge_params)
+                ),
+                circle_detection=CircleDetectionConfig(
+                    method=circle_method, 
+                    params=copy.deepcopy(circle_params)
+                )
             )
             configs.append(config)
         
@@ -221,7 +261,8 @@ class PipelineGridSearch:
         else:
             # Sample evenly spaced combinations
             indices = np.linspace(0, len(all_combinations) - 1, num_samples, dtype=int)
-            return [all_combinations[i] for i in indices]
+            # FIX: Return deep copies to avoid reference issues
+            return [copy.deepcopy(all_combinations[i]) for i in indices]
     
     def _generate_param_combinations(self, param_dict: Dict) -> List[Dict]:
         """Generate all combinations of parameters."""
@@ -233,7 +274,11 @@ class PipelineGridSearch:
         
         combinations = []
         for combination in itertools.product(*values):
-            combinations.append(dict(zip(keys, combination)))
+            # FIX: Create new dict for each combination
+            param_dict = {}
+            for key, value in zip(keys, combination):
+                param_dict[key] = value
+            combinations.append(param_dict)
         
         return combinations
     
@@ -273,6 +318,9 @@ class PipelineGridSearch:
         for i, config in enumerate(test_configs):
             print(f"Config {i+1}/{len(test_configs)}: "
                   f"{config.denoising.method} + {config.contour_detection.method} + {config.circle_detection.method}")
+            print(f"  Denoise params: {config.denoising.params}")
+            print(f"  Edge params: {config.contour_detection.params}")
+            print(f"  Circle params: {config.circle_detection.params}")
             
             try:
                 pipeline = TankAnalysisPipeline(config)
@@ -287,6 +335,8 @@ class PipelineGridSearch:
                     'score': score,
                     'config_id': i
                 })
+                
+                print(f"  → Score: {score:.3f}, Circles: {len(result.get('circles', []))}, Identified: {len(result.get('identified_circles', {}))}")
                 
             except Exception as e:
                 print(f"Configuration failed: {e}")
