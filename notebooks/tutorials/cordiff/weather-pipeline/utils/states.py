@@ -5,7 +5,7 @@ def init_state_variables():
     # Raw Data state variables
     if "raw_data" not in st.session_state:
         st.session_state.raw_data = {
-            "base_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated",
+            "base_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated_432",
             "file": None,
             "file_path": None,
             "date": None,
@@ -23,7 +23,7 @@ def init_state_variables():
 def reset_state_variables(page="all"):
     if page in ["all", "raw_data"]:
         st.session_state.raw_data = {
-            "base_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated",
+            "base_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated_432",
             "file": None,
             "file_path": None,
             "date": None,

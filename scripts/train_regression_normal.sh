@@ -18,326 +18,89 @@ F11=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2023-10-26_2024-04-29_150.nc"
 VAL=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2024-04-30_2024-05-30_21.nc"
 
 STAT=$STATS_DIR"stat.json"
-
 CHECKPOINT_PATH="/app/checkpoints_regression/"
-###################################################
-############# warmup round of training ############
-###################################################
-# 1. warm up on one file
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* 2>/dev/null | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-highest_checkpoint=${highest_checkpoint:-0}  # Default to 0 if empty
-training_duration=5000
-echo "Warm up on one file from $highest_checkpoint until duration: $training_duration"
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom.py::CustomDataset" \
-        dataset.data_path=$F1 \
-        validation.data_path=$VAL \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="amp-fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
 
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
+# Function to train on a set of files
+train_on_files() {
+    local files=("$@")  # Array of input files
+    local highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* 2>/dev/null | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
+    highest_checkpoint=${highest_checkpoint:-0}  # Default to 0 if empty
+    training_duration=$((training_duration + DURATION_INCREMENT))
+    echo "Resuming from $highest_checkpoint until duration: $training_duration"
 
-###################################################
-############# first round of training #############
-###################################################
-# every sample is seen only one time
-# onefile containd 150 days* 24 hours = 3600 samples
-# 3 files = 10800 samples
-# as we checkpoint every 5000, we take 15000
+    # Format the file paths as a comma-separated list
+    local formatted_files=$(printf ', "%s"' "${files[@]}")
+    formatted_files="[${formatted_files:2}]"  # Remove the leading comma and space
+
+    if (( training_duration > highest_checkpoint )); then
+        cd /app && torchrun --nproc_per_node=8 \
+            examples/weather/corrdiff/train.py \
+            hydra.run.dir=/app/outputs \
+            dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
+            dataset.data_path="$formatted_files" \
+            validation.data_path="[\"$VAL\"]" \
+            dataset.stats_path=$STAT \
+            validation.stats_path=$STAT \
+            training.hp.training_duration=$training_duration \
+            training.hp.grad_clip_threshold=null \
+            training.hp.lr=0.00005 \
+            training.perf.fp_optimizations="fp32" \
+            training.io.load_optimizer=False \
+            --config-name=config_training_custom_regression_normal
+    else
+        echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
+    fi
+}
+
+# 1. Warm-up round of training
+DURATION_INCREMENT=5000
+training_duration=0
+echo "Warm up on one file"
+train_on_files "$F1"
+
+# 2. First round of training
+# 1 file = 150 days *24 hours =3600 steps
+# 3 files = 450 days *24 hours =10800 steps
+# We set the increment to 15000 to ensure we go beyond 10800 steps
 DURATION_INCREMENT=15000
-
-# 2. Train on files 1,2,3
 echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
+train_on_files "$F1" "$F2" "$F3"
+train_on_files "$F4" "$F5" "$F6"
+train_on_files "$F7" "$F8" "$F9"
+train_on_files "$F10" "$F11"
 
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F1, \
-            $F2, \
-            $F3 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-# 3. Train on files 4,5,6
-echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F4, \
-            $F5, \
-            $F6 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-# 4. Train on files 7,8,9
-echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F7, \
-            $F8, \
-            $F9 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-# 5. Train on files 10,11
-echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F10, \
-            $F11 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-###################################################
-############# Second round of training ############
-###################################################
-# Longer training durations each sample is seen twice
-# onefile containd 150 days* 24 hours = 3600 samples
-# 3 files = 10800 samples
-# 10800 * 2 = 21600 (as we checkpoint every 5000, we take 25000)
+# 3. Second round of training
+# 1 file = 150 days *24 hours =3600 steps
+# 3 files = 450 days *24 hours =10800 steps
+# We set the increment to 25000 to ensure we go beyond 10800 steps twice
 DURATION_INCREMENT=25000
-
-# 6. Train on files 1,2,3 (2nd round)
 echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
+train_on_files "$F1" "$F2" "$F3"
+train_on_files "$F3" "$F4" "$F5"
+train_on_files "$F5" "$F6" "$F7"
+train_on_files "$F7" "$F8" "$F9"
+train_on_files "$F9" "$F10" "$F11"
 
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F1, \
-            $F2, \
-            $F3 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-# 7. Train on files 3,4,5 (2nd round)
+# 3. third round of training
+# 1 file = 150 days *24 hours =3600 steps
+# 3 files = 450 days *24 hours =10800 steps
+# We set the increment to 35000 to ensure we go beyond 10800 steps thrice
+DURATION_INCREMENT=35000
 echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
+train_on_files "$F1" "$F2" "$F3"
+train_on_files "$F3" "$F4" "$F5"
+train_on_files "$F5" "$F6" "$F7"
+train_on_files "$F7" "$F8" "$F9"
+train_on_files "$F9" "$F10" "$F11"
 
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F3, \
-            $F4, \
-            $F5 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-# 8. Train on files 5,6,7 (2nd round)
+# 3. forth round of training
+# 1 file = 150 days *24 hours =3600 steps
+# 3 files = 450 days *24 hours =10800 steps
+# We set the increment to 45000 to ensure we go beyond 10800 steps four times
+DURATION_INCREMENT=45000
 echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F5, \
-            $F6, \
-            $F7 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-# 9. Train on files 7,8,9 (2nd round)
-echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F7, \
-            $F8, \
-            $F9 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
-
-# 10. Train on files 9,10,11 (2nd round)
-echo "--------------------------------------"
-highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
-training_duration=$((training_duration + DURATION_INCREMENT))
-echo "Resuming from $highest_checkpoint until duration: $training_duration"
-
-if (( training_duration > highest_checkpoint )); then
-    cd /app && torchrun --nproc_per_node=8 \
-        examples/weather/corrdiff/train.py \
-        hydra.run.dir=/app/outputs \
-        dataset.type="/app/examples/weather/corrdiff/datasets/custom_list_2.py::CustomDataset" \
-        dataset.data_path="[ \
-            $F9, \
-            $F10, \
-            $F11 \
-        ]" \
-        validation.data_path="[ \
-            $VAL \
-        ]" \
-        dataset.stats_path=$STAT \
-        validation.stats_path=$STAT \
-        training.hp.training_duration=$training_duration \
-        training.hp.grad_clip_threshold=null \
-        training.hp.lr=0.00005 \
-        training.perf.fp_optimizations="fp32" \
-        training.io.load_optimizer=False \
-        --config-name=config_training_custom_regression_normal
-else
-    echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
-fi
+train_on_files "$F1" "$F2" "$F3"
+train_on_files "$F3" "$F4" "$F5"
+train_on_files "$F5" "$F6" "$F7"
+train_on_files "$F7" "$F8" "$F9"
+train_on_files "$F9" "$F10" "$F11"
