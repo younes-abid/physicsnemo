@@ -1,0 +1,27 @@
+{
+  "denoising": {
+    "method": "median",
+    "params": {
+      "kernel_size": 5
+    }
+  },
+  "contour_detection": {
+    "method": "adaptive_threshold",
+    "params": {
+      "block_size": 7,
+      "c": 2
+    }
+  },
+  "circle_detection": {
+    "method": "hough",
+    "params": {
+      "dp": 1.0,
+      "min_dist": 40,
+      "param1": 70,
+      "param2": 40,
+      "min_radius": 10,
+      "max_radius": 100
+    }
+  },
+  "pixel_resolution": 0.51
+}

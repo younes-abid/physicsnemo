@@ -28,6 +28,10 @@ cat ~/.obsutilconfig
 ##########################
 ### Download from obs ####
 ##########################
+#Download data via cli
+./obsutil cp -r -f -u obs://sardata-bayanat/ICEYE/labels/oiltank/ /home/younes.abid/git/physicsnemo/data/oil_tank_volume -e=obs.ae-ad-1.vb.g42cloud.com
+
+
 # Download data from obs web interface
 https://console.vb.g42cloud.com/obs/?region=ae-ad-1#/obs/manage/sardata-bayanat/object/list
 Account name: g42_it
@@ -35,12 +39,9 @@ user name: younes_abid
 pass: **************
 obs://sardata-bayanat/ICEYE/labels/oiltank/raw_data
 
-# Copy data
-scp -r /Users/younes.abid/Desktop/oil_tank_volume younes.abid@10.120.125.144:'/home/younes.abid/git/physicsnemo/data'
-
-#Download data via cli
-./obsutil cp -r -f -u obs://sardata-bayanat/ICEYE/labels/oiltank/ /home/younes.abid/git/physicsnemo/data/oil_tank_volume -e=obs.ae-ad-1.vb.g42cloud.com
-
 ##########################
 ## scp data and output ###
 ##########################
+# Copy data
+scp -r /Users/younes.abid/Desktop/oil_tank_volume younes.abid@10.120.125.144:'/home/younes.abid/git/physicsnemo/data'
+scp -r younes.abid@10.120.125.144:'/home/younes.abid/git/physicsnemo/data/oil_tank_volume' /Users/younes.abid/Desktop   
