@@ -1,3 +1,32 @@
+add classes like ProcessorRegistry for denoisers, edge detectors, circle detectors, and scorers to allow easy swapping and testing of different algorithms.
+
+add preprocess plotting to plotter in the grid search plotter
+
+CHeck some AI sokution like circle detection (circlenet) or edge detection (HED, RCF, etc.)
+the list of algorithms widely used for edge detection: 
+- HED: Holistically-Nested Edge Detection
+- RCF: Richer Convolutional Features for Edge Detection
+- Canny Edge Detection
+- Sobel Operator
+- Laplacian of Gaussian (LoG)
+- Structured Edge Detection
+- DeepEdge
+- PiDiNet: A Lightweight Edge Detector
+- DexiNed: Deep Edge and Boundary Detection
+- BDCN: Bi-Directional Cascade Network for Edge Detection
+- RDS: Residual Dense Network for Image Edge Detection
+- COB: Convolutional Oriented Boundaries
+- HOG: Histogram of Oriented Gradients (for edge and shape detection)
+- FAST: Features from Accelerated Segment Test (corner detection, but can be used for edges)
+- hough transform for circle detection
+- LSD: Line Segment Detector (can be adapted for edge detection)
+- EDTER: Edge Detection with Transformer
+- CED: Contextual Edge Detection
+- DCD: Deep Contour Detection
+- PiDiNet: A Lightweight Edge Detector
+- DexiNed: Deep Edge and Boundary Detection
+
+
 ## **🎯 PRIORITY 1: Edge Detection Improvements**
 
 ### **1.1 Develop Crescent-Shaped Edge Detection**

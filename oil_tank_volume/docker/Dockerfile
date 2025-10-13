@@ -12,6 +12,7 @@ RUN apt-get update -y && \
         libsm6 \
         libxext6 \
         libgl1 \
+        tree \
         ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

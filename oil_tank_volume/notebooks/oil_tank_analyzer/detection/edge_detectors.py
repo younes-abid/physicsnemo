@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from abc import abstractmethod
-from oil_tank_analyzer.core.base_processor import BaseProcessor, ProcessorRegistry
+from oil_tank_analyzer.core.base_processor import BaseProcessor, EdgeDetectorRegistry
 import xarray as xr
 from matplotlib.path import Path
 import matplotlib.pyplot as plt
@@ -57,7 +57,7 @@ class BaseEdgeDetector(BaseProcessor):
         pass
 
 
-@ProcessorRegistry.register("xarray_contour_edges")
+@EdgeDetectorRegistry.register("xarray_contour_edges")
 class XArrayContourEdgeDetector(BaseEdgeDetector):
     """Edge detection using XArray's contour algorithm - Simple and reliable version."""
     
@@ -83,19 +83,19 @@ class XArrayContourEdgeDetector(BaseEdgeDetector):
         levels = kwargs.get('levels', 5)
         robust = kwargs.get('robust', True)
         
-        # Create figure and get contours
+        # Create figure and get contours with better color handling
         fig, ax = plt.subplots(figsize=(8, 6))
         edges = np.zeros((height, width), dtype=np.uint8)
         
         try:
-            # Plot contours - exactly like the working notebook code
+            # Plot contours with explicit color specification to avoid RGBA errors
             contour_plot = da.plot.contour(
                 x='x', y='y',
                 levels=levels,
                 robust=robust,
                 ax=ax,
                 add_colorbar=False,
-                colors='white'
+                colors=['white']  # Use list format instead of string
             )
             
             # Extract and draw contours - simple and direct
@@ -127,11 +127,18 @@ class XArrayContourEdgeDetector(BaseEdgeDetector):
                 
             return edges
             
+        except Exception as e:
+            # Fallback: if matplotlib contour fails, use alternative method
+            print(f"XArray contour failed ({e}), falling back to Canny edge detection")
+            # Fall back to a simple Canny edge detector
+            edges = cv2.Canny(image, 50, 150)
+            return edges
+            
         finally:
             plt.close(fig)
 
 
-@ProcessorRegistry.register("xarray_contourf_edges")
+@EdgeDetectorRegistry.register("xarray_contourf_edges")
 class XArrayContourFEdgeDetector(BaseProcessor):
     """Edge detection using XArray's filled contours."""
     
@@ -234,7 +241,7 @@ class XArrayContourFEdgeDetector(BaseProcessor):
             plt.close(fig)
 
 
-@ProcessorRegistry.register("xarray_adaptive_contour")
+@EdgeDetectorRegistry.register("xarray_adaptive_contour")
 class XArrayAdaptiveContourEdgeDetector(BaseEdgeDetector):
     """Adaptive contour detection with automatic level selection."""
     
@@ -303,7 +310,7 @@ class XArrayAdaptiveContourEdgeDetector(BaseEdgeDetector):
             plt.close(fig)
 
 
-@ProcessorRegistry.register("xarray_multiscale_contour")
+@EdgeDetectorRegistry.register("xarray_multiscale_contour")
 class XArrayMultiscaleContourEdgeDetector(BaseEdgeDetector):
     """Multi-scale contour detection for different feature sizes."""
     
@@ -390,7 +397,7 @@ class XArrayMultiscaleContourEdgeDetector(BaseEdgeDetector):
         finally:
             plt.close(fig)
                 
-@ProcessorRegistry.register("canny_tank")
+@EdgeDetectorRegistry.register("canny_tank")
 class CannyTankEdgeDetector(BaseEdgeDetector):
     """Canny edge detector optimized for oil tank circles."""
     
@@ -407,7 +414,7 @@ class CannyTankEdgeDetector(BaseEdgeDetector):
         return cv2.Canny(image, threshold1, threshold2, 
                         apertureSize=aperture_size, L2gradient=l2_gradient)
 
-@ProcessorRegistry.register("adaptive_threshold_tank")
+@EdgeDetectorRegistry.register("adaptive_threshold_tank")
 class AdaptiveThresholdTankEdgeDetector(BaseEdgeDetector):
     """Adaptive threshold optimized for oil tank features."""
     
@@ -427,7 +434,7 @@ class AdaptiveThresholdTankEdgeDetector(BaseEdgeDetector):
         
         return binary
 
-@ProcessorRegistry.register("multi_scale_tank")
+@EdgeDetectorRegistry.register("multi_scale_tank")
 class MultiScaleTankEdgeDetector(BaseEdgeDetector):
     """Multi-scale edge detection for different tank features."""
     
@@ -455,7 +462,7 @@ class MultiScaleTankEdgeDetector(BaseEdgeDetector):
         
         return combined_edges
 
-@ProcessorRegistry.register("gradient_magnitude_tank")
+@EdgeDetectorRegistry.register("gradient_magnitude_tank")
 class GradientMagnitudeTankEdgeDetector(BaseEdgeDetector):
     """Gradient magnitude based edge detection for tank circles."""
     
@@ -474,7 +481,7 @@ class GradientMagnitudeTankEdgeDetector(BaseEdgeDetector):
         
         return edges.astype(np.uint8)
 
-@ProcessorRegistry.register("phase_congruency_tank")
+@EdgeDetectorRegistry.register("phase_congruency_tank")
 class PhaseCongruencyTankEdgeDetector(BaseEdgeDetector):
     """Phase congruency based edge detection (good for SAR)."""
     
@@ -510,7 +517,7 @@ class PhaseCongruencyTankEdgeDetector(BaseEdgeDetector):
         
         return edges.astype(np.uint8)
 
-@ProcessorRegistry.register("morphological_tank")
+@EdgeDetectorRegistry.register("morphological_tank")
 class MorphologicalTankEdgeDetector(BaseEdgeDetector):
     """Morphological edge detection for tank structure."""
     
@@ -534,7 +541,7 @@ class MorphologicalTankEdgeDetector(BaseEdgeDetector):
         
         return edges
 
-@ProcessorRegistry.register("intensity_profile_tank")
+@EdgeDetectorRegistry.register("intensity_profile_tank")
 class IntensityProfileTankEdgeDetector(BaseEdgeDetector):
     """Edge detection based on intensity profile analysis for tanks."""
     
@@ -564,7 +571,7 @@ class IntensityProfileTankEdgeDetector(BaseEdgeDetector):
         
         return edges
 
-@ProcessorRegistry.register("combined_tank")
+@EdgeDetectorRegistry.register("combined_tank")
 class CombinedTankEdgeDetector(BaseEdgeDetector):
     """Combined multiple edge detection methods for robust tank detection."""
     
@@ -613,7 +620,7 @@ class CombinedTankEdgeDetector(BaseEdgeDetector):
         
         return edges
 
-@ProcessorRegistry.register("deep_learning_tank")
+@EdgeDetectorRegistry.register("deep_learning_tank")
 class DeepLearningTankEdgeDetector(BaseEdgeDetector):
     """Edge detection using pre-trained deep learning models."""
     
@@ -642,7 +649,7 @@ class DeepLearningTankEdgeDetector(BaseEdgeDetector):
         fallback_detector = CannyTankEdgeDetector(self.config)
         return fallback_detector._detect_edges(image, **kwargs)
 
-@ProcessorRegistry.register("sobel")
+@EdgeDetectorRegistry.register("sobel")
 class SobelEdgeDetector(BaseEdgeDetector):
     def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
         ksize = kwargs.get('ksize', 3)
@@ -652,7 +659,7 @@ class SobelEdgeDetector(BaseEdgeDetector):
         abs_grad_y = cv2.convertScaleAbs(grad_y)
         return cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
 
-@ProcessorRegistry.register("laplacian")
+@EdgeDetectorRegistry.register("laplacian")
 class LaplacianEdgeDetector(BaseEdgeDetector):
     def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
         ksize = kwargs.get('ksize', 3)

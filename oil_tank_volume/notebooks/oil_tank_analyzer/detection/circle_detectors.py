@@ -2,14 +2,78 @@ import cv2
 import numpy as np
 from abc import abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
-from oil_tank_analyzer.core.base_processor import BaseProcessor, ProcessorRegistry
+from oil_tank_analyzer.core.base_processor import BaseProcessor, CircleDetectorRegistry
 
 class BaseCircleDetector(BaseProcessor):
     """Base class for circle detection algorithms optimized for oil tanks."""
     
     def process(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict[str, Any]]:
-        circles = self._detect_circles(image, edges, **kwargs)
-        return self._filter_oil_tank_circles(circles, image.shape, **kwargs)
+        raw_circles = self._detect_circles(image, edges, **kwargs)
+        filtered_circles = self._filter_oil_tank_circles(raw_circles, image.shape, **kwargs)
+        
+        # Store both raw and filtered circles for analysis
+        # Add metadata to help with visualization
+        for circle in filtered_circles:
+            circle['filtered'] = False
+        
+        # Mark filtered out circles
+        filtered_out = []
+        for raw_circle in raw_circles:
+            is_kept = any(
+                abs(raw_circle['center'][0] - kept['center'][0]) < 3 and 
+                abs(raw_circle['center'][1] - kept['center'][1]) < 3 
+                for kept in filtered_circles
+            )
+            if not is_kept:
+                raw_circle['filtered'] = True
+                raw_circle['filter_reason'] = self._get_filter_reason(raw_circle, image.shape, **kwargs)
+                filtered_out.append(raw_circle)
+        
+        # Add debug info
+        debug = kwargs.get('debug', True)
+        if debug and filtered_out:
+            print(f"  Filtered out {len(filtered_out)} circles:")
+            for i, circle in enumerate(filtered_out):
+                reason = circle.get('filter_reason', 'unknown')
+                center = circle['center']
+                radius = circle['radius']
+                print(f"    {i+1}. R={radius}px at ({center[0]}, {center[1]}) - {reason}")
+        
+        # Store all circles (kept + filtered) for visualization
+        all_circles_with_status = filtered_circles + filtered_out
+        
+        return filtered_circles
+    
+    def _get_filter_reason(self, circle: Dict, image_shape: Tuple[int, int], **kwargs) -> str:
+        """Determine why a circle was filtered out."""
+        height, width = image_shape
+        x, y = circle['center']
+        radius = circle['radius']
+        
+        # Check each filter condition
+        center_tolerance = kwargs.get('center_tolerance', 0.2)
+        min_diameter_ratio = kwargs.get('min_diameter_ratio', 0.6)
+        max_diameter_ratio = kwargs.get('max_diameter_ratio', 1.1)
+        
+        center_x = width / 2
+        allowed_x_range = (center_x - width * center_tolerance, 
+                          center_x + width * center_tolerance)
+        
+        min_radius = (width * min_diameter_ratio) / 2
+        max_radius = (width * max_diameter_ratio) / 2
+        
+        # Check position filter
+        if not (allowed_x_range[0] <= x <= allowed_x_range[1]):
+            return f"off-center (x={x}, allowed: {allowed_x_range[0]:.1f}-{allowed_x_range[1]:.1f})"
+        
+        # Check size filter
+        if radius < min_radius:
+            return f"too small (R={radius}, min={min_radius:.1f})"
+        elif radius > max_radius:
+            return f"too large (R={radius}, max={max_radius:.1f})"
+        
+        # If it passed position and size filters, it was filtered by quality/max_circles limit
+        return f"low quality score (excluded by max_circles={kwargs.get('max_circles', 5)} limit)"
     
     @abstractmethod
     def _detect_circles(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict[str, Any]]:
@@ -24,7 +88,7 @@ class BaseCircleDetector(BaseProcessor):
         center_tolerance = kwargs.get('center_tolerance', 0.2)  # 20% of width from center
         min_diameter_ratio = kwargs.get('min_diameter_ratio', 0.6)  # At least 60% of image width
         max_diameter_ratio = kwargs.get('max_diameter_ratio', 1.1)  # Up to 110% of image width
-        max_circles = kwargs.get('max_circles', 5)  # Maximum circles to return
+        max_circles = kwargs.get('max_circles', 5)  # Maximum circles to return, -1 means no limit
         
         center_x = width / 2
         allowed_x_range = (center_x - width * center_tolerance, 
@@ -50,9 +114,15 @@ class BaseCircleDetector(BaseProcessor):
             circle['quality_score'] = self._calculate_circle_quality(circle, image_shape)
             filtered.append(circle)
         
-        # Sort by quality score and limit number
+        # Sort by quality score and limit number only if max_circles > 0
         filtered.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
-        return filtered[:max_circles]
+        
+        # Apply max_circles limit only if it's positive
+        if max_circles > 0:
+            return filtered[:max_circles]
+        else:
+            # No limit when max_circles is -1 or 0
+            return filtered
     
     def _calculate_circle_quality(self, circle: Dict, image_shape: Tuple[int, int]) -> float:
         """Calculate quality score for oil tank circles."""
@@ -77,7 +147,7 @@ class BaseCircleDetector(BaseProcessor):
         
         return score
 
-@ProcessorRegistry.register("hough_tank")
+@CircleDetectorRegistry.register("hough_tank")
 class HoughTankCircleDetector(BaseCircleDetector):
     """Hough circle detector optimized for oil tanks."""
     
@@ -109,7 +179,7 @@ class HoughTankCircleDetector(BaseCircleDetector):
         
         return detected_circles
 
-@ProcessorRegistry.register("ellipse_tank")
+@CircleDetectorRegistry.register("ellipse_tank")
 class EllipseTankDetector(BaseCircleDetector):
     """Ellipse detector for handling sensor angle distortions."""
     
@@ -160,7 +230,7 @@ class EllipseTankDetector(BaseCircleDetector):
         
         return detected_ellipses
 
-@ProcessorRegistry.register("contour_tank")
+@CircleDetectorRegistry.register("contour_tank")
 class ContourTankCircleDetector(BaseCircleDetector):
     """Contour-based detector optimized for oil tank features."""
     
@@ -206,12 +276,13 @@ class ContourTankCircleDetector(BaseCircleDetector):
         
         return detected_circles
 
-@ProcessorRegistry.register("multi_scale_tank")
+@CircleDetectorRegistry.register("multi_scale_tank")
 class MultiScaleTankDetector(BaseCircleDetector):
     """Multi-scale detector for handling different circle types in oil tanks."""
     
     def _detect_circles(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict[str, Any]]:
         height, width = image.shape
+        debug = kwargs.get('debug', True)  # Enable debugging by default
         
         # Detect at multiple scales for different circle types
         scales = [
@@ -221,6 +292,9 @@ class MultiScaleTankDetector(BaseCircleDetector):
         ]
         
         all_circles = []
+        
+        if debug:
+            print(f"  Multi-scale detection on {width}x{height} image:")
         
         for scale in scales:
             # Hough transform for this scale
@@ -232,8 +306,10 @@ class MultiScaleTankDetector(BaseCircleDetector):
                 maxRadius=scale['max_radius']
             )
             
+            scale_count = 0
             if circles is not None:
                 circles = np.round(circles[0, :]).astype("int")
+                scale_count = len(circles)
                 for (x, y, r) in circles:
                     all_circles.append({
                         'center': (x, y),
@@ -241,10 +317,16 @@ class MultiScaleTankDetector(BaseCircleDetector):
                         'scale': scale['name'],
                         'method': 'multi_scale'
                     })
+            
+            if debug:
+                print(f"    {scale['name']} scale (R: {scale['min_radius']}-{scale['max_radius']}): {scale_count} circles")
+        
+        if debug:
+            print(f"  Total before filtering: {len(all_circles)} circles")
         
         return all_circles
 
-@ProcessorRegistry.register("template_tank")
+@CircleDetectorRegistry.register("template_tank")
 class TemplateTankDetector(BaseCircleDetector):
     """Template-based detector using known oil tank structure."""
     
@@ -294,7 +376,7 @@ class TemplateTankDetector(BaseCircleDetector):
         
         return all_circles
 
-@ProcessorRegistry.register("intensity_tank")
+@CircleDetectorRegistry.register("intensity_tank")
 class IntensityTankDetector(BaseCircleDetector):
     """Intensity-based detector for dark bottom circles and bright rings."""
     
@@ -340,7 +422,7 @@ class IntensityTankDetector(BaseCircleDetector):
         
         return detected_circles
 
-@ProcessorRegistry.register("blob_detector")
+@CircleDetectorRegistry.register("blob_detector")
 class BlobCircleDetector(BaseCircleDetector):
     def _detect_circles(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict[str, Any]]:
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(edges, connectivity=8)

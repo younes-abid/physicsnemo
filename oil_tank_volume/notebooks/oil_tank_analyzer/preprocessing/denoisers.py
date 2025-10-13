@@ -2,12 +2,16 @@ import cv2
 import numpy as np
 from scipy import ndimage
 from abc import abstractmethod
-from oil_tank_analyzer.core.base_processor import BaseProcessor, ProcessorRegistry
+from oil_tank_analyzer.core.base_processor import BaseProcessor, DenoiserRegistry
 
 class BaseDenoiser(BaseProcessor):
     """Base class for denoising algorithms optimized for SAR oil tank imagery."""
     
     def process(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        # Store original range for better preservation
+        original_min, original_max = image.min(), image.max()
+        preserve_range = kwargs.get('preserve_dynamic_range', True)
+        
         # Convert to float32 for better processing
         if image.dtype != np.float32:
             if image.dtype != np.uint8:
@@ -19,7 +23,26 @@ class BaseDenoiser(BaseProcessor):
         # Post-processing for oil tank features
         denoised = self._postprocess_for_tanks(denoised, **kwargs)
         
-        return (denoised * 255).astype(np.uint8)
+        # Convert back to uint8 with range preservation
+        denoised_uint8 = (denoised * 255).astype(np.uint8)
+        
+        # Optionally restore original dynamic range
+        if preserve_range and original_min != 0 or original_max != 255:
+            # Stretch to match original range while avoiding over-compression
+            current_min, current_max = denoised_uint8.min(), denoised_uint8.max()
+            if current_max > current_min:  # Avoid division by zero
+                # Use a gentler range adjustment
+                target_min = max(original_min, current_min - 10)  # Don't go too dark
+                target_max = min(original_max, current_max + 10)  # Don't go too bright
+                
+                # Scale to target range
+                scale = (target_max - target_min) / (current_max - current_min)
+                denoised_uint8 = np.clip(
+                    (denoised_uint8 - current_min) * scale + target_min,
+                    0, 255
+                ).astype(np.uint8)
+        
+        return denoised_uint8
     
     def _postprocess_for_tanks(self, image: np.ndarray, **kwargs) -> np.ndarray:
         """Post-processing specifically for oil tank features."""
@@ -70,14 +93,14 @@ class BaseDenoiser(BaseProcessor):
     def _denoise(self, image: np.ndarray, **kwargs) -> np.ndarray:
         pass
 
-@ProcessorRegistry.register("identity_denoiser")
+@DenoiserRegistry.register("identity_denoiser")
 class IdentityDenoiser(BaseDenoiser):
     """Identity denoiser - returns the image unchanged."""
     
     def _denoise(self, image: np.ndarray, **kwargs) -> np.ndarray:
         return image.copy()
     
-@ProcessorRegistry.register("lee_sigma")
+@DenoiserRegistry.register("lee_sigma")
 class LeeSigmaDenoiser(BaseDenoiser):
     """Lee-Sigma filter for SAR imagery - preserves edges while reducing speckle."""
     
@@ -114,7 +137,7 @@ class LeeSigmaDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("enhanced_lee")
+@DenoiserRegistry.register("enhanced_lee")
 class EnhancedLeeDenoiser(BaseDenoiser):
     """Enhanced Lee filter - improved version for SAR with better edge preservation."""
     
@@ -150,7 +173,7 @@ class EnhancedLeeDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("frost")
+@DenoiserRegistry.register("frost")
 class FrostDenoiser(BaseDenoiser):
     """Frost filter - exponential weighting for SAR despeckling."""
     
@@ -188,7 +211,7 @@ class FrostDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("gamma_map")
+@DenoiserRegistry.register("gamma_map")
 class GammaMAPDenoiser(BaseDenoiser):
     """Gamma Maximum A Posteriori filter - statistical approach for SAR."""
     
@@ -228,7 +251,7 @@ class GammaMAPDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("kuan")
+@DenoiserRegistry.register("kuan")
 class KuanDenoiser(BaseDenoiser):
     """Kuan filter - minimum mean square error estimator for SAR."""
     
@@ -263,7 +286,7 @@ class KuanDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("sar_bilateral")
+@DenoiserRegistry.register("sar_bilateral")
 class SARBilateralDenoiser(BaseDenoiser):
     """Bilateral filter optimized for SAR imagery with intensity and spatial domains."""
     
@@ -278,7 +301,7 @@ class SARBilateralDenoiser(BaseDenoiser):
         
         return denoised.astype(np.float32) / 255.0
 
-@ProcessorRegistry.register("nonlocal_means_sar")
+@DenoiserRegistry.register("nonlocal_means_sar")
 class NonLocalMeansSARDenoiser(BaseDenoiser):
     """Non-local means optimized for SAR with template matching."""
     
@@ -293,7 +316,7 @@ class NonLocalMeansSARDenoiser(BaseDenoiser):
         
         return denoised.astype(np.float32) / 255.0
 
-@ProcessorRegistry.register("wavelet_sar")
+@DenoiserRegistry.register("wavelet_sar")
 class WaveletSARDenoiser(BaseDenoiser):
     """Wavelet denoising optimized for SAR oil tank imagery."""
     
@@ -330,7 +353,7 @@ class WaveletSARDenoiser(BaseDenoiser):
         """Apply soft thresholding to wavelet coefficients."""
         return np.sign(data) * np.maximum(np.abs(data) - threshold, 0)
 
-@ProcessorRegistry.register("median_tank")
+@DenoiserRegistry.register("median_tank")
 class MedianTankDenoiser(BaseDenoiser):
     """Median filter optimized for oil tank circular features."""
     
@@ -345,7 +368,7 @@ class MedianTankDenoiser(BaseDenoiser):
         
         return denoised.astype(np.float32) / 255.0
 
-@ProcessorRegistry.register("adaptive_tank")
+@DenoiserRegistry.register("adaptive_tank")
 class AdaptiveTankDenoiser(BaseDenoiser):
     """Adaptive denoising that preserves tank structural features."""
     
@@ -373,7 +396,7 @@ class AdaptiveTankDenoiser(BaseDenoiser):
         
         return enhanced
 
-@ProcessorRegistry.register("multi_scale_tank")
+@DenoiserRegistry.register("multi_scale_tank")
 class MultiScaleTankDenoiser(BaseDenoiser):
     """Multi-scale denoising for different tank feature sizes."""
     
@@ -435,7 +458,7 @@ class MultiScaleTankDenoiser(BaseDenoiser):
         
         return denoised
 
-@ProcessorRegistry.register("gaussian")
+@DenoiserRegistry.register("gaussian")
 class GaussianDenoiser(BaseDenoiser):
     def _denoise(self, image: np.ndarray, **kwargs) -> np.ndarray:
         kernel_size = kwargs.get('kernel_size', 5)

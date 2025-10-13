@@ -217,21 +217,32 @@ class PipelineTester:
         else:
             test_image = rotated_crop[0]
         
-        # REMOVE THIS LINE - preprocessing will handle normalization
-        # test_image = cv2.normalize(test_image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         
         if self.verbose:
             print(f"Testing configuration: {config.preprocessing.method} + "  # UPDATED
                 f"{config.denoising.method} + "
                 f"{config.contour_detection.method} + {config.circle_detection.method}")
-            if config.preprocessing.params:  # NEW
-                print(f"  Preprocess params: {config.preprocessing.params}")
-            if config.denoising.params:
-                print(f"  Denoise params: {config.denoising.params}")
-            if config.contour_detection.params:
-                print(f"  Edge params: {config.contour_detection.params}")
-            if config.circle_detection.params:
-                print(f"  Circle params: {config.circle_detection.params}")
+            
+            # Show actual parameters being used (including defaults)
+            try:
+                pipeline = TankAnalysisPipeline(config)
+                actual_params = self._get_actual_parameters(pipeline, config)
+                
+                print(f"  Preprocess params: {actual_params['preprocessing']}")
+                print(f"  Denoise params: {actual_params['denoising']}")  
+                print(f"  Edge params: {actual_params['edge_detection']}")
+                print(f"  Circle params: {actual_params['circle_detection']}")
+                
+            except Exception as e:
+                # Fallback to showing config params if pipeline creation fails
+                if config.preprocessing.params:
+                    print(f"  Preprocess params: {config.preprocessing.params}")
+                if config.denoising.params:
+                    print(f"  Denoise params: {config.denoising.params}")
+                if config.contour_detection.params:
+                    print(f"  Edge params: {config.contour_detection.params}")
+                if config.circle_detection.params:
+                    print(f"  Circle params: {config.circle_detection.params}")
         
         try:
             pipeline = TankAnalysisPipeline(config)
@@ -252,6 +263,230 @@ class PipelineTester:
             if self.verbose:
                 print(f"Configuration failed: {e}")
             return {'error': str(e)}
+    
+    def _get_actual_parameters(self, pipeline: 'TankAnalysisPipeline', config: PipelineConfig) -> Dict[str, Dict]:
+        """Get the actual parameters that will be used by each processor, including defaults."""
+        actual_params = {}
+        
+        # Get preprocessing parameters
+        actual_params['preprocessing'] = self._merge_with_defaults(
+            config.preprocessing.params,
+            self._get_preprocessing_defaults(config.preprocessing.method)
+        )
+        
+        # Get denoising parameters  
+        actual_params['denoising'] = self._merge_with_defaults(
+            config.denoising.params,
+            self._get_denoising_defaults(config.denoising.method)
+        )
+        
+        # Get edge detection parameters
+        actual_params['edge_detection'] = self._merge_with_defaults(
+            config.contour_detection.params,
+            self._get_edge_detection_defaults(config.contour_detection.method)
+        )
+        
+        # Get circle detection parameters
+        actual_params['circle_detection'] = self._merge_with_defaults(
+            config.circle_detection.params,
+            self._get_circle_detection_defaults(config.circle_detection.method)
+        )
+        
+        return actual_params
+    
+    def _merge_with_defaults(self, provided_params: Dict, default_params: Dict) -> Dict:
+        """Merge provided parameters with defaults, showing what's actually used."""
+        merged = default_params.copy()
+        merged.update(provided_params)
+        return merged
+    
+    def _get_preprocessing_defaults(self, method: str) -> Dict:
+        """Get default parameters for preprocessing methods."""
+        defaults = {
+            'identity_preprocessor': {},
+            'basic_normalization': {
+                'enhance_contrast': False,
+                'clahe_clip_limit': 2.0,
+                'clahe_grid_size': 8
+            },
+            'tank_enhancement': {
+                'enhance_contrast': True,
+                'enhance_circular': True,
+                'suppress_background': False,
+                'clahe_clip_limit': 2.0,
+                'clahe_grid_size': 8,
+                'dog_sigma1': 1.0,
+                'dog_sigma2': 2.0
+            },
+            'multi_scale_enhancement': {
+                'scales': [0.5, 1.0, 2.0],
+                'weights': [0.2, 0.6, 0.2]
+            }
+        }
+        return defaults.get(method, {})
+    
+    def _get_denoising_defaults(self, method: str) -> Dict:
+        """Get default parameters for denoising methods."""
+        defaults = {
+            'identity_denoiser': {
+                'preserve_dynamic_range': True
+            },
+            'enhanced_lee': {
+                'window_size': 7,
+                'damping_factor': 1.0,
+                'cu': 0.523,
+                'max_sigma': 2.0,
+                'enhance_circular': True,
+                'edge_preserving': True,
+                'circular_kernel_size': 3,
+                'edge_threshold': 0.1,
+                'preserve_dynamic_range': True
+            },
+            'lee_sigma': {
+                'window_size': 7,
+                'sigma_range': 2.0,
+                'enhance_circular': True,
+                'edge_preserving': True,
+                'preserve_dynamic_range': True
+            },
+            'frost': {
+                'window_size': 7,
+                'damping_factor': 2.0,
+                'preserve_dynamic_range': True
+            },
+            'gamma_map': {
+                'window_size': 7,
+                'looks': 1,
+                'preserve_dynamic_range': True
+            },
+            'kuan': {
+                'window_size': 7,
+                'looks': 1,
+                'preserve_dynamic_range': True
+            },
+            'sar_bilateral': {
+                'd': 9,
+                'sigma_color': 0.1,
+                'sigma_space': 75,
+                'preserve_dynamic_range': True
+            },
+            'nonlocal_means_sar': {
+                'h': 7,
+                'template_size': 5,
+                'search_size': 15,
+                'preserve_dynamic_range': True
+            },
+            'wavelet_sar': {
+                'level': 3,
+                'threshold_factor': 0.1,
+                'preserve_dynamic_range': True
+            },
+            'median_tank': {
+                'kernel_size': 5,
+                'preserve_dynamic_range': True
+            },
+            'adaptive_tank': {
+                'enhance_tank_features': True,
+                'edge_threshold': 0.05,
+                'preserve_dynamic_range': True
+            },
+            'multi_scale_tank': {
+                'scales': [1.0, 0.5, 2.0],
+                'weights': [0.6, 0.2, 0.2],
+                'preserve_dynamic_range': True
+            },
+            'gaussian': {
+                'kernel_size': 5,
+                'sigma': 1.0,
+                'preserve_dynamic_range': True
+            }
+        }
+        return defaults.get(method, {})
+    
+    def _get_edge_detection_defaults(self, method: str) -> Dict:
+        """Get default parameters for edge detection methods."""
+        defaults = {
+            'xarray_contour_edges': {
+                'levels': 5,
+                'robust': True,
+                'clean_edges': True,
+                'enhance_contrast': True,
+                'reduce_speckle': True,
+                'remove_small_edges': True,
+                'min_edge_length': 20,
+                'enhance_horizontal': True
+            },
+            'canny_tank': {
+                'aperture_size': 5,
+                'l2_gradient': True,
+                'enhance_contrast': True,
+                'reduce_speckle': True
+            },
+            'adaptive_threshold_tank': {
+                'block_size': 15,
+                'c': 3
+            },
+            'multi_scale_tank': {
+                'scales': [1.0, 0.75, 1.25]
+            },
+            'combined_tank': {
+                'enhance_circular': True
+            },
+            'sobel': {
+                'ksize': 3
+            },
+            'laplacian': {
+                'ksize': 3
+            }
+        }
+        return defaults.get(method, {})
+    
+    def _get_circle_detection_defaults(self, method: str) -> Dict:
+        """Get default parameters for circle detection methods."""
+        defaults = {
+            'hough_tank': {
+                'dp': 1.1,
+                'param1': 30,
+                'param2': 25,
+                'center_tolerance': 0.2,
+                'min_diameter_ratio': 0.6,
+                'max_diameter_ratio': 1.1,
+                'max_circles': 5
+            },
+            'ellipse_tank': {
+                'min_area': 1000,
+                'max_area': 10000,
+                'center_tolerance': 0.2,
+                'max_circles': 5
+            },
+            'contour_tank': {
+                'min_area': 500,
+                'max_area': 15000,
+                'min_circularity': 0.5,
+                'center_tolerance': 0.2,
+                'max_circles': 5
+            },
+            'multi_scale_tank': {
+                'center_tolerance': 0.2,
+                'min_diameter_ratio': 0.6,
+                'max_diameter_ratio': 1.1,
+                'max_circles': 5
+            },
+            'template_tank': {
+                'center_tolerance': 0.2,
+                'max_circles': 5
+            },
+            'intensity_tank': {
+                'intensity_threshold': 0.3,
+                'center_tolerance': 0.2,
+                'max_circles': 5
+            },
+            'blob_detector': {
+                'center_tolerance': 0.2,
+                'max_circles': 5
+            }
+        }
+        return defaults.get(method, {})
     
     def test_configuration_on_all_tanks(self,
                                       config: PipelineConfig,
@@ -309,10 +544,10 @@ class PipelineTester:
 
 
 def quick_test_configuration(processed_tanks: List[Dict],
-                           edge_method: str,
-                           circle_method: str,
-                           preprocessing_method: str = "identity_preprocessor", 
-                           denoise_method: str = "identity_denoiser",
+                           preprocessing_method: str = "identity_preprocessor",
+                           denoise_method: str = "identity_denoiser", 
+                           edge_method: str = "xarray_contour_edges",
+                           circle_method: str ='multi_scale_tank',
                            preprocessing_params: Dict = None, 
                            denoise_params: Dict = None,
                            edge_params: Dict = None,

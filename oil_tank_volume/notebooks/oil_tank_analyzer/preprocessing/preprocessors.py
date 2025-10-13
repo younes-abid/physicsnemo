@@ -4,7 +4,7 @@ Preprocessing modules for oil tank SAR images.
 import numpy as np
 import cv2
 from abc import abstractmethod
-from oil_tank_analyzer.core.base_processor import BaseProcessor, ProcessorRegistry
+from oil_tank_analyzer.core.base_processor import BaseProcessor, PreprocessorRegistry
 
 
 class BasePreprocessor(BaseProcessor):
@@ -33,7 +33,7 @@ class BasePreprocessor(BaseProcessor):
         pass
 
 
-@ProcessorRegistry.register("identity_preprocessor")
+@PreprocessorRegistry.register("identity_preprocessor")
 class IdentityPreprocessor(BasePreprocessor):
     """Identity preprocessor - returns image unchanged."""
     
@@ -49,7 +49,7 @@ class IdentityPreprocessor(BasePreprocessor):
         return image
 
 
-@ProcessorRegistry.register("basic_normalization")
+@PreprocessorRegistry.register("basic_normalization")
 class BasicNormalizationPreprocessor(BasePreprocessor):
     """Basic normalization to uint8 with optional contrast enhancement."""
     
@@ -72,7 +72,7 @@ class BasicNormalizationPreprocessor(BasePreprocessor):
         return image
 
 
-@ProcessorRegistry.register("tank_enhancement")
+@PreprocessorRegistry.register("tank_enhancement")
 class TankEnhancementPreprocessor(BasePreprocessor):
     """Enhanced preprocessing specifically for oil tank SAR images."""
     
@@ -138,7 +138,7 @@ class TankEnhancementPreprocessor(BasePreprocessor):
         return image
 
 
-@ProcessorRegistry.register("multi_scale_enhancement")
+@PreprocessorRegistry.register("multi_scale_enhancement")
 class MultiScaleEnhancementPreprocessor(BasePreprocessor):
     """Multi-scale enhancement for different tank features."""
     

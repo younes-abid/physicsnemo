@@ -1,8 +1,9 @@
-
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import cv2
-from oil_tank_analyzer.core.base_processor import ProcessorRegistry
+from oil_tank_analyzer.core.base_processor import (
+    PreprocessorRegistry, DenoiserRegistry, EdgeDetectorRegistry, CircleDetectorRegistry
+)
 from oil_tank_analyzer.core.config import PipelineConfig
 from oil_tank_analyzer.preprocessing.denoisers import BaseDenoiser
 from oil_tank_analyzer.preprocessing.preprocessors import BasePreprocessor
@@ -24,16 +25,16 @@ class TankAnalysisPipeline:
     def _initialize_processors(self):
         """Initialize all processors based on config."""
         try:
-            self.preprocessor = ProcessorRegistry.create_processor(
+            self.preprocessor = PreprocessorRegistry.create_processor(
                 self.config.preprocessing.method, self.config
             )
-            self.denoiser = ProcessorRegistry.create_processor(
+            self.denoiser = DenoiserRegistry.create_processor(
                 self.config.denoising.method, self.config
             )
-            self.edge_detector = ProcessorRegistry.create_processor(
+            self.edge_detector = EdgeDetectorRegistry.create_processor(
                 self.config.contour_detection.method, self.config
             )
-            self.circle_detector = ProcessorRegistry.create_processor(
+            self.circle_detector = CircleDetectorRegistry.create_processor(
                 self.config.circle_detection.method, self.config
             )
         except Exception as e:
@@ -81,11 +82,52 @@ class TankAnalysisPipeline:
             # Step 3: Circle Detection
             start_time = cv2.getTickCount()
             print(f"Circle detection with {self.config.circle_detection.method}...")
-            circles = self.circle_detector.process(denoised, edges, **self.config.circle_detection.params, **kwargs)
-            results['pipeline_stages']['circles'] = circles
+            
+            # Get raw circles before filtering
+            raw_circles = self.circle_detector._detect_circles(denoised, edges, **self.config.circle_detection.params, **kwargs)
+            
+            # Apply filtering
+            circles = self.circle_detector._filter_oil_tank_circles(raw_circles, denoised.shape, **self.config.circle_detection.params, **kwargs)
+            
+            # Identify filtered out circles
+            filtered_out = []
+            for raw_circle in raw_circles:
+                is_kept = any(
+                    abs(raw_circle['center'][0] - kept['center'][0]) < 3 and 
+                    abs(raw_circle['center'][1] - kept['center'][1]) < 3 
+                    for kept in circles
+                )
+                if not is_kept:
+                    raw_circle['filtered'] = True
+                    raw_circle['filter_reason'] = self.circle_detector._get_filter_reason(
+                        raw_circle, denoised.shape, **self.config.circle_detection.params
+                    )
+                    filtered_out.append(raw_circle)
+            
+            # Mark kept circles
+            for circle in circles:
+                circle['filtered'] = False
+            
+            # Store all circle data for visualization
+            results['pipeline_stages']['circles'] = circles  # For pipeline stages
+            results['circles'] = circles  # For main results access (plotting needs this!)
+            results['raw_circles'] = raw_circles  # All detected circles before filtering
+            results['filtered_circles'] = filtered_out  # Circles that were filtered out
+            
             results['performance_metrics']['circle_detection_time'] = (
                 cv2.getTickCount() - start_time
             ) / cv2.getTickFrequency()
+            
+            # Debug output for filtered circles
+            debug = kwargs.get('debug', True)
+            if debug and filtered_out:
+                print(f"  Filtered out {len(filtered_out)} circles:")
+                for i, circle in enumerate(filtered_out):
+                    reason = circle.get('filter_reason', 'unknown')
+                    center = circle['center']
+                    radius = circle['radius']
+                    print(f"    {i+1}. R={radius}px at ({center[0]}, {center[1]}) - {reason}")
+            
             print(f"Detected {len(circles)} circles")
             
             # Step 4: Tank component identification
@@ -326,18 +368,12 @@ class TankAnalysisPipeline:
     def list_available_methods(self):
         """List all available methods for each step."""
         return {
-            'denoising': ProcessorRegistry.list_processors_for_class(BaseDenoiser),
-            'edge_detection': ProcessorRegistry.list_processors_for_class(BaseEdgeDetector),
-            'circle_detection': ProcessorRegistry.list_processors_for_class(BaseCircleDetector)
+            'preprocessing': PreprocessorRegistry.list_processors(),
+            'denoising': DenoiserRegistry.list_processors(),
+            'edge_detection': EdgeDetectorRegistry.list_processors(),
+            'circle_detection': CircleDetectorRegistry.list_processors()
         }
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics for the pipeline."""
         return self.performance_metrics
-
-# Add this to ProcessorRegistry to filter by base class
-def list_processors_for_class(base_class):
-    return [name for name, cls in ProcessorRegistry._registry.items() 
-            if issubclass(cls, base_class)]
-
-ProcessorRegistry.list_processors_for_class = staticmethod(list_processors_for_class)
