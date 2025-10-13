@@ -1,4 +1,8 @@
 {
+  "preprocessing": {
+    "method": "identity_preprocessor",
+    "params": {}
+  },
   "denoising": {
     "method": "lee_sigma",
     "params": {}
