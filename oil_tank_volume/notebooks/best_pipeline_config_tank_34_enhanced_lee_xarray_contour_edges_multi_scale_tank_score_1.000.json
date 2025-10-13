@@ -1,0 +1,19 @@
+{
+  "preprocessing": {
+    "method": "tank_enhancement",
+    "params": {}
+  },
+  "denoising": {
+    "method": "enhanced_lee",
+    "params": {}
+  },
+  "contour_detection": {
+    "method": "xarray_contour_edges",
+    "params": {}
+  },
+  "circle_detection": {
+    "method": "multi_scale_tank",
+    "params": {}
+  },
+  "pixel_resolution": 0.51
+}

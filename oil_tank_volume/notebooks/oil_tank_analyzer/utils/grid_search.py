@@ -195,6 +195,13 @@ class PipelineGridSearch:
                     'max_diameter_ratio': [1.0, 1.1, 1.2],
                     'max_circles': [5, 8, -1]
                 },
+                'hybrid_intensity_edge': {
+                    'center_tolerance': [0.15, 0.2, 0.25],
+                    'dark_percentile': [10, 15, 20],
+                    'bright_percentile': [80, 85, 90],
+                    'min_area_intensity': [500, 1000, 1500],
+                    'max_circles': [5, 8, -1]
+                },
                 'template_tank': {
                     'center_tolerance': [0.15, 0.2, 0.25],
                     'max_circles': [5, 8, -1]

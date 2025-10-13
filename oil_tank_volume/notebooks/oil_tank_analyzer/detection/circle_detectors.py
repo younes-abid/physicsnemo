@@ -442,3 +442,222 @@ class BlobCircleDetector(BaseCircleDetector):
             })
         
         return detected_circles
+
+@CircleDetectorRegistry.register("hybrid_intensity_edge")
+class HybridIntensityEdgeDetector(BaseCircleDetector):
+    """Hybrid detector combining intensity-based and edge-based circle detection."""
+    
+    def _detect_circles(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict[str, Any]]:
+        height, width = image.shape
+        debug = kwargs.get('debug', True)
+        
+        all_circles = []
+        
+        if debug:
+            print(f"  Hybrid detection on {width}x{height} image:")
+        
+        # Method 1: Edge-based detection (good for rings)
+        edge_circles = self._detect_edge_circles(image, edges, **kwargs)
+        for circle in edge_circles:
+            circle['detection_method'] = 'edge'
+            all_circles.append(circle)
+        
+        # Method 2: Intensity-based detection (good for filled regions)
+        intensity_circles = self._detect_intensity_circles(image, **kwargs)
+        for circle in intensity_circles:
+            circle['detection_method'] = 'intensity'
+            all_circles.append(circle)
+        
+        # Method 3: Adaptive threshold detection
+        adaptive_circles = self._detect_adaptive_threshold_circles(image, **kwargs)
+        for circle in adaptive_circles:
+            circle['detection_method'] = 'adaptive'
+            all_circles.append(circle)
+        
+        if debug:
+            print(f"    Edge-based: {len(edge_circles)} circles")
+            print(f"    Intensity-based: {len(intensity_circles)} circles") 
+            print(f"    Adaptive threshold: {len(adaptive_circles)} circles")
+            print(f"    Total before deduplication: {len(all_circles)} circles")
+        
+        # Remove duplicate detections (same circle detected by multiple methods)
+        deduplicated_circles = self._remove_duplicates(all_circles, distance_threshold=10)
+        
+        if debug:
+            print(f"    After deduplication: {len(deduplicated_circles)} circles")
+        
+        return deduplicated_circles
+    
+    def _detect_edge_circles(self, image: np.ndarray, edges: np.ndarray, **kwargs) -> List[Dict]:
+        """Standard edge-based circle detection."""
+        height, width = image.shape
+        
+        circles = cv2.HoughCircles(
+            edges, cv2.HOUGH_GRADIENT, dp=1.2,
+            minDist=int(height * 0.3),
+            param1=30, param2=20,
+            minRadius=int(width * 0.2),
+            maxRadius=int(width * 0.6)
+        )
+        
+        detected_circles = []
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            for (x, y, r) in circles:
+                detected_circles.append({
+                    'center': (x, y),
+                    'radius': r,
+                    'confidence': 0.8,
+                    'method': 'edge_hough'
+                })
+        
+        return detected_circles
+    
+    def _detect_intensity_circles(self, image: np.ndarray, **kwargs) -> List[Dict]:
+        """Intensity-based detection for filled dark/bright circles."""
+        height, width = image.shape
+        detected_circles = []
+        
+        # Parameters
+        dark_percentile = kwargs.get('dark_percentile', 15)
+        bright_percentile = kwargs.get('bright_percentile', 85)
+        min_area = kwargs.get('min_area_intensity', 1000)
+        
+        # Detect dark filled regions (oil tank bottoms)
+        dark_threshold = np.percentile(image, dark_percentile)
+        dark_mask = (image < dark_threshold).astype(np.uint8) * 255
+        
+        # Morphological operations to clean up the mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, kernel)
+        dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_OPEN, kernel)
+        
+        # Find dark circular regions
+        contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < min_area:
+                continue
+            
+            # Check if contour is roughly circular
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue
+            
+            circularity = 4 * np.pi * area / (perimeter * perimeter)
+            if circularity > 0.4:  # Reasonably circular
+                (x, y), radius = cv2.minEnclosingCircle(contour)
+                
+                # Verify this is actually a dark region
+                mask = np.zeros_like(image, dtype=np.uint8)
+                cv2.circle(mask, (int(x), int(y)), int(radius), 255, -1)
+                mean_intensity = cv2.mean(image, mask=mask)[0]
+                
+                if mean_intensity < np.percentile(image, 30):  # Confirm it's dark
+                    detected_circles.append({
+                        'center': (int(x), int(y)),
+                        'radius': int(radius),
+                        'confidence': circularity,
+                        'mean_intensity': mean_intensity,
+                        'method': 'dark_intensity',
+                        'area': area
+                    })
+        
+        # Detect bright filled regions (potential tank tops)
+        bright_threshold = np.percentile(image, bright_percentile)
+        bright_mask = (image > bright_threshold).astype(np.uint8) * 255
+        
+        # Clean up bright mask
+        bright_mask = cv2.morphologyEx(bright_mask, cv2.MORPH_CLOSE, kernel)
+        
+        contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < min_area * 0.5:  # Bright regions can be smaller
+                continue
+            
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue
+            
+            circularity = 4 * np.pi * area / (perimeter * perimeter)
+            if circularity > 0.3:  # More lenient for bright regions
+                (x, y), radius = cv2.minEnclosingCircle(contour)
+                
+                # Verify this is actually bright
+                mask = np.zeros_like(image, dtype=np.uint8)
+                cv2.circle(mask, (int(x), int(y)), int(radius), 255, -1)
+                mean_intensity = cv2.mean(image, mask=mask)[0]
+                
+                if mean_intensity > np.percentile(image, 70):  # Confirm it's bright
+                    detected_circles.append({
+                        'center': (int(x), int(y)),
+                        'radius': int(radius),
+                        'confidence': circularity,
+                        'mean_intensity': mean_intensity,
+                        'method': 'bright_intensity',
+                        'area': area
+                    })
+        
+        return detected_circles
+    
+    def _detect_adaptive_threshold_circles(self, image: np.ndarray, **kwargs) -> List[Dict]:
+        """Adaptive threshold-based circle detection."""
+        # Use local adaptive thresholding to handle varying illumination
+        adaptive_mask = cv2.adaptiveThreshold(
+            image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 
+            blockSize=15, C=5
+        )
+        
+        # Find circles in adaptive threshold image
+        circles = cv2.HoughCircles(
+            adaptive_mask, cv2.HOUGH_GRADIENT, dp=1.5,
+            minDist=int(image.shape[0] * 0.3),
+            param1=50, param2=30,
+            minRadius=int(image.shape[1] * 0.15),
+            maxRadius=int(image.shape[1] * 0.6)
+        )
+        
+        detected_circles = []
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            for (x, y, r) in circles:
+                detected_circles.append({
+                    'center': (x, y),
+                    'radius': r,
+                    'confidence': 0.6,
+                    'method': 'adaptive_threshold'
+                })
+        
+        return detected_circles
+    
+    def _remove_duplicates(self, circles: List[Dict], distance_threshold: int = 10) -> List[Dict]:
+        """Remove duplicate circle detections."""
+        if not circles:
+            return circles
+        
+        # Sort by confidence (highest first)
+        circles.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        
+        unique_circles = []
+        for circle in circles:
+            is_duplicate = False
+            center = circle['center']
+            
+            for existing in unique_circles:
+                existing_center = existing['center']
+                distance = np.sqrt((center[0] - existing_center[0])**2 + 
+                                 (center[1] - existing_center[1])**2)
+                
+                if distance < distance_threshold:
+                    # It's a duplicate, keep the one with higher confidence
+                    if circle.get('confidence', 0) > existing.get('confidence', 0):
+                        # Replace existing with current circle
+                        unique_circles[unique_circles.index(existing)] = circle
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_circles.append(circle)
+        
+        return unique_circles
