@@ -58,47 +58,47 @@ training_duration=0
 echo "Warm up on one file"
 train_on_files "$F1"
 
-# 2. First round of training
-# 1 file = 150 days *24 hours =3600 steps
-# 3 files = 450 days *24 hours =10800 steps
-# We set the increment to 15000 to ensure we go beyond 10800 steps
-DURATION_INCREMENT=15000
 echo "--------------------------------------"
+echo "First round of training"
+echo "1 file = 150 days *24 hours =3600 steps"
+echo "3 files = 450 days *24 hours =10800 steps"
+echo "We set the increment to 15000 to ensure we go beyond 10800 steps"
+DURATION_INCREMENT=15000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F4" "$F5" "$F6"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F10" "$F11"
 
-# 3. Second round of training
-# 1 file = 150 days *24 hours =3600 steps
-# 3 files = 450 days *24 hours =10800 steps
-# We set the increment to 25000 to ensure we go beyond 10800 steps twice
+echo "--------------------------------------"
+echo "Second round of training"
+echo "1 file = 150 days *24 hours =3600 steps"
+echo "3 files = 450 days *24 hours =10800 steps"
+echo "We set the increment to 25000 to ensure we go beyond 10800 steps twice"
 DURATION_INCREMENT=25000
-echo "--------------------------------------"
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
 train_on_files "$F5" "$F6" "$F7"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F9" "$F10" "$F11"
 
-# 3. third round of training
-# 1 file = 150 days *24 hours =3600 steps
-# 3 files = 450 days *24 hours =10800 steps
-# We set the increment to 35000 to ensure we go beyond 10800 steps thrice
+echo "--------------------------------------"
+echo "Third round of training"
+echo "1 file = 150 days *24 hours =3600 steps"
+echo "3 files = 450 days *24 hours =10800 steps"
+echo "We set the increment to 35000 to ensure we go beyond 10800 steps thrice"
 DURATION_INCREMENT=35000
-echo "--------------------------------------"
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
 train_on_files "$F5" "$F6" "$F7"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F9" "$F10" "$F11"
 
-# 3. forth round of training
-# 1 file = 150 days *24 hours =3600 steps
-# 3 files = 450 days *24 hours =10800 steps
-# We set the increment to 45000 to ensure we go beyond 10800 steps four times
-DURATION_INCREMENT=45000
 echo "--------------------------------------"
+echo "Forth round of training"
+echo "1 file = 150 days *24 hours =3600 steps"
+echo "3 files = 450 days *24 hours =10800 steps"
+echo "We set the increment to 45000 to ensure we go beyond 10800 steps four times"
+DURATION_INCREMENT=45000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
 train_on_files "$F5" "$F6" "$F7"

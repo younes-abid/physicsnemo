@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from oil_tank_analyzer.core.config import PipelineConfig, DenoisingConfig, ContourConfig, CircleDetectionConfig
 from oil_tank_analyzer.pipelines.tank_pipeline import TankAnalysisPipeline
 import copy
+import random
 
 class PipelineGridSearch:
     """Enhanced grid search for finding optimal pipeline configuration with SAR optimizations."""
@@ -283,9 +284,24 @@ class PipelineGridSearch:
         return combinations
     
     def run_grid_search(self, image: np.ndarray, max_configs: int = 50, 
-                       strategy: str = "smart") -> List[Dict]:
-        """Run grid search on the image."""
+                    strategy: str = "smart", shuffle: bool = True) -> List[Dict]:
+        """Run grid search on the image.
+        
+        Args:
+            image: Input image for testing configurations
+            max_configs: Maximum number of configurations to test
+            strategy: Search strategy ('exhaustive', 'smart', 'recommended')
+            shuffle: Whether to shuffle configurations before testing
+        
+        Returns:
+            List of results sorted by score
+        """
         configs = self.generate_configs(strategy)
+        
+        # Shuffle configurations if requested
+        if shuffle and configs:
+            random.shuffle(configs)
+            print(f"Shuffled {len(configs)} configurations")
         
         # Limit number of configs to test
         if len(configs) > max_configs:
@@ -313,11 +329,13 @@ class PipelineGridSearch:
             test_configs = configs
         
         print(f"Testing {len(test_configs)} configurations...")
+        if shuffle:
+            print("Configurations are shuffled")
         
         results = []
         for i, config in enumerate(test_configs):
             print(f"Config {i+1}/{len(test_configs)}: "
-                  f"{config.denoising.method} + {config.contour_detection.method} + {config.circle_detection.method}")
+                f"{config.denoising.method} + {config.contour_detection.method} + {config.circle_detection.method}")
             print(f"  Denoise params: {config.denoising.params}")
             print(f"  Edge params: {config.contour_detection.params}")
             print(f"  Circle params: {config.circle_detection.params}")
@@ -337,7 +355,8 @@ class PipelineGridSearch:
                 })
                 
                 print(f"  → Score: {score:.3f}, Circles: {len(result.get('circles', []))}, Identified: {len(result.get('identified_circles', {}))}")
-                
+                print("-"*50)
+                print() 
             except Exception as e:
                 print(f"Configuration failed: {e}")
                 continue
@@ -345,7 +364,7 @@ class PipelineGridSearch:
         # Sort by score
         results.sort(key=lambda x: x['score'], reverse=True)
         return results
-    
+        
     def _score_result_enhanced(self, result: Dict, image_shape: Tuple[int, int]) -> float:
         """Enhanced scoring using quality metrics and tank analysis."""
         if 'error' in result:

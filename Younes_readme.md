@@ -1,4 +1,4 @@
-# Younes contib
+# Younes contrib
 ```bash
 /docker
 /scripts
@@ -10,8 +10,36 @@
 ```bash
 bash scripts/build_docker.sh
 bash scripts/run_docker.sh
+docker exec -it physiscsnemo_container /bin/bash
+
 ## This will build the docker image and run the example script inside the container.
 bash scripts/example.sh
+
+bash scripts/train_regression.sh
+bash scripts/train_diffusion.sh
+```
+
+```bash
+nohup bash scripts/run_docker.sh && bash scripts/train_diffusion.sh > ./output/output.log 2>&1 &
+```
+
+```bash
+# using tmux
+tmux new -s train_diffusion
+# Run your commands inside the tmux session
+bash scripts/run_docker.sh
+docker exec -it physiscsnemo_container /bin/bash
+
+bash scripts/train_diffusion.sh
+# Detach from the session by pressing Ctrl + B, then D
+# To reattach to the session later, use:
+tmux attach -t train_diffusion
+
+#to check all tmux sessions
+tmux ls
+
+#to kill a tmux session
+tmux kill-session -t train_diffusion
 ```
 # To run the Earth2Studio container, you can use the following command:
 The earth2studio image is built from another repository, you can find it here:https://github.com/younes-abid/earth2studio 

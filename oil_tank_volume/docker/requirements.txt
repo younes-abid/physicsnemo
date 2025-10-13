@@ -10,3 +10,4 @@ shapely==2.0.6
 fiona==1.10.1
 jupyter==1.1.1
 matplotlib==3.5.3
+xarray==2022.12.0

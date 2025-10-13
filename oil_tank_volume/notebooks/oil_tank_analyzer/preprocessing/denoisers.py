@@ -70,6 +70,13 @@ class BaseDenoiser(BaseProcessor):
     def _denoise(self, image: np.ndarray, **kwargs) -> np.ndarray:
         pass
 
+@ProcessorRegistry.register("identity_denoiser")
+class IdentityDenoiser(BaseDenoiser):
+    """Identity denoiser - returns the image unchanged."""
+    
+    def _denoise(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        return image.copy()
+    
 @ProcessorRegistry.register("lee_sigma")
 class LeeSigmaDenoiser(BaseDenoiser):
     """Lee-Sigma filter for SAR imagery - preserves edges while reducing speckle."""
@@ -374,6 +381,15 @@ class MultiScaleTankDenoiser(BaseDenoiser):
         scales = kwargs.get('scales', [1.0, 0.5, 2.0])
         weights = kwargs.get('weights', [0.6, 0.2, 0.2])
         
+        # Store original image range
+        original_dtype = image.dtype
+        
+        # Normalize weights
+        weight_sum = sum(weights)
+        weights = [w / weight_sum for w in weights]
+        
+        # Convert to float for processing
+        image_float = image.astype(np.float32)
         denoised_scales = []
         
         for scale, weight in zip(scales, weights):
@@ -381,9 +397,9 @@ class MultiScaleTankDenoiser(BaseDenoiser):
                 # Resize image
                 h, w = image.shape
                 new_size = (int(w * scale), int(h * scale))
-                scaled_img = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
+                scaled_img = cv2.resize(image_float, new_size, interpolation=cv2.INTER_AREA)
             else:
-                scaled_img = image
+                scaled_img = image_float.copy()
             
             # Denoise at this scale
             if scale <= 1.0:
@@ -393,9 +409,14 @@ class MultiScaleTankDenoiser(BaseDenoiser):
                 # Use lighter denoising for larger scales
                 denoiser = MedianTankDenoiser(self.config)
             
-            denoised_scale = denoiser._denoise(scaled_img, **kwargs)
+            # Convert to uint8 for denoising (most denoisers expect uint8)
+            scaled_img_uint8 = cv2.normalize(scaled_img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            denoised_scale = denoiser._denoise(scaled_img_uint8, **kwargs)
             
-            # Resize back to original size
+            # Convert back to float for weighted combination
+            denoised_scale = denoised_scale.astype(np.float32)
+            
+            # Resize back to original size if needed
             if scale != 1.0:
                 denoised_scale = cv2.resize(denoised_scale, (image.shape[1], image.shape[0]))
             
@@ -403,6 +424,14 @@ class MultiScaleTankDenoiser(BaseDenoiser):
         
         # Combine scales
         denoised = np.sum(denoised_scales, axis=0)
+        
+        # Convert back to original dtype
+        if original_dtype == np.uint8:
+            denoised = np.clip(denoised, 0, 255).astype(np.uint8)
+        elif original_dtype == np.uint16:
+            denoised = np.clip(denoised, 0, 65535).astype(np.uint16)
+        else:
+            denoised = denoised.astype(original_dtype)
         
         return denoised
 

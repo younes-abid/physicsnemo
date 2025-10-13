@@ -1,0 +1,15 @@
+{
+  "denoising": {
+    "method": "lee_sigma",
+    "params": {}
+  },
+  "contour_detection": {
+    "method": "canny_tank",
+    "params": {}
+  },
+  "circle_detection": {
+    "method": "multi_scale_tank",
+    "params": {}
+  },
+  "pixel_resolution": 0.51
+}

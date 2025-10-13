@@ -783,7 +783,13 @@ class ResidualLoss:
 
         # Return loss and predictions if requested
         if return_predictions:
-            return loss, D_yn
+            # Convert residual prediction to HR prediction for convenience and using the same metrics of r2 RMSE ...
+            if patching is not None:
+                y_mean_patched = patching.apply(input=self.y_mean)
+                hr_pred = D_yn + y_mean_patched
+            else:
+                hr_pred = D_yn + self.y_mean
+            return loss, hr_pred
         return loss
 
 

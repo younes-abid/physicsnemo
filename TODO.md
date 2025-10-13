@@ -1,3 +1,14 @@
+# Oil tank volume prediction
+ - add new step as preprocessing at the beginin of thepipeline (decibels, logscale, ......)
+ - add xaray contour and contourf methods to detect edges
+ - check circle detection methods
+ - check in the SOTA is there a way to decode SAR amplitude into 3d 
+
+
+# cordiff
+    - train diffusion
+    - move regression+ diffusion to archived and clean the old archive when finished and get results >=0.8 r2
+    - pick temperature and retrain regression then diffusion
 ### **1. Model Improvements**
 
 - **Increase Model Capacity**:

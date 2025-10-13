@@ -2,6 +2,7 @@
 
 # Run the Docker container in interactive mode with GPU support
 docker run -it --rm \
+    --name physiscsnemo_container \
     --gpus all \
     --ipc=host \
     --ulimit memlock=-1 \

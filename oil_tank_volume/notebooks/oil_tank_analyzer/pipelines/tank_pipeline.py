@@ -1,9 +1,11 @@
+
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import cv2
 from oil_tank_analyzer.core.base_processor import ProcessorRegistry
 from oil_tank_analyzer.core.config import PipelineConfig
 from oil_tank_analyzer.preprocessing.denoisers import BaseDenoiser
+from oil_tank_analyzer.preprocessing.preprocessors import BasePreprocessor
 from oil_tank_analyzer.detection.edge_detectors import BaseEdgeDetector
 from oil_tank_analyzer.detection.circle_detectors import BaseCircleDetector
 
@@ -12,6 +14,7 @@ class TankAnalysisPipeline:
     
     def __init__(self, config: PipelineConfig):
         self.config = config
+        self.preprocessor = None
         self.denoiser = None
         self.edge_detector = None
         self.circle_detector = None
@@ -19,8 +22,11 @@ class TankAnalysisPipeline:
         self.performance_metrics = {}
     
     def _initialize_processors(self):
-        """Initialize all processors based on config with error handling."""
+        """Initialize all processors based on config."""
         try:
+            self.preprocessor = ProcessorRegistry.create_processor(
+                self.config.preprocessing.method, self.config
+            )
             self.denoiser = ProcessorRegistry.create_processor(
                 self.config.denoising.method, self.config
             )
@@ -33,86 +39,8 @@ class TankAnalysisPipeline:
         except Exception as e:
             raise ValueError(f"Failed to initialize processors: {e}")
     
-    def preprocess_tank_image(self, image: np.ndarray, **kwargs) -> np.ndarray:
-        """Enhanced preprocessing specifically for oil tank SAR images."""
-        # Handle different input formats
-        if len(image.shape) == 3:
-            image = image[:, :, 0]  # Use first channel for SAR
-        
-        # Convert to proper type and normalize
-        if image.dtype != np.uint8:
-            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        
-        # Apply SAR-specific enhancements
-        if kwargs.get('enhance_tank_features', True):
-            image = self._enhance_tank_features(image, **kwargs)
-        
-        return image
-    
-    def _enhance_tank_features(self, image: np.ndarray, **kwargs) -> np.ndarray:
-        """Enhance features specific to oil tanks in SAR imagery."""
-        enhanced = image.copy()
-        
-        # 1. Contrast enhancement for tank boundaries
-        clahe = cv2.createCLAHE(clipLimit=kwargs.get('clahe_clip_limit', 2.0),
-                               tileGridSize=kwargs.get('clahe_grid_size', (8, 8)))
-        enhanced = clahe.apply(enhanced)
-        
-        # 2. Emphasize circular patterns
-        if kwargs.get('enhance_circular', True):
-            enhanced = self._enhance_circular_patterns(enhanced, **kwargs)
-        
-        # 3. Reduce background noise while preserving tank structure
-        if kwargs.get('background_suppression', True):
-            enhanced = self._suppress_background(enhanced, **kwargs)
-        
-        return enhanced
-    
-    def _enhance_circular_patterns(self, image: np.ndarray, **kwargs) -> np.ndarray:
-        """Enhance circular and elliptical patterns for tank detection."""
-        # Use difference of Gaussians to enhance circular features
-        sigma1 = kwargs.get('dog_sigma1', 1.0)
-        sigma2 = kwargs.get('dog_sigma2', 2.0)
-        
-        gaussian1 = cv2.GaussianBlur(image, (0, 0), sigma1)
-        gaussian2 = cv2.GaussianBlur(image, (0, 0), sigma2)
-        dog = gaussian1 - gaussian2
-        
-        # Enhance the DoG result
-        enhanced = cv2.addWeighted(image, 0.7, dog, 0.3, 0)
-        return np.clip(enhanced, 0, 255).astype(np.uint8)
-    
-    def _suppress_background(self, image: np.ndarray, **kwargs) -> np.ndarray:
-        """Suppress background noise while preserving tank structures."""
-        # Use adaptive thresholding to separate tank from background
-        binary = cv2.adaptiveThreshold(
-            image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 11, 2
-        )
-        
-        # Find largest connected component (likely the tank)
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
-        
-        if num_labels > 1:
-            # Find the largest component (skip background)
-            largest_component = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
-            
-            # Create mask for the tank region
-            tank_mask = (labels == largest_component).astype(np.uint8) * 255
-            
-            # Apply mask to original image
-            masked_image = cv2.bitwise_and(image, image, mask=tank_mask)
-            
-            # Fill background with median value
-            background_value = np.median(image[tank_mask == 0]) if np.any(tank_mask == 0) else 0
-            result = np.where(tank_mask == 255, masked_image, background_value)
-            
-            return result.astype(np.uint8)
-        
-        return image
-    
     def process_tank(self, image: np.ndarray, **kwargs) -> Dict[str, Any]:
-        """Process a single tank image through the pipeline with enhanced analysis."""
+        """Process a single tank image through the pipeline."""
         results = {
             'pipeline_stages': {},
             'performance_metrics': {},
@@ -120,57 +48,59 @@ class TankAnalysisPipeline:
         }
         
         try:
-            # Enhanced preprocessing
+            # Step 0: Preprocessing (now configurable!)
             start_time = cv2.getTickCount()
-            preprocessed = self.preprocess_tank_image(image, **kwargs)
+            print(f"Preprocessing with {self.config.preprocessing.method}...")
+            preprocessed = self.preprocessor.process(image, **self.config.preprocessing.params, **kwargs)
             results['pipeline_stages']['preprocessed'] = preprocessed
             results['performance_metrics']['preprocessing_time'] = (
                 cv2.getTickCount() - start_time
             ) / cv2.getTickFrequency()
+            print(f"Preprocessed - Shape: {preprocessed.shape}, dtype: {preprocessed.dtype}, range: [{preprocessed.min()}, {preprocessed.max()}]")
             
             # Step 1: Denoising
             start_time = cv2.getTickCount()
             print(f"Denoising with {self.config.denoising.method}...")
-            denoised = self.denoiser.process(preprocessed, **kwargs)
+            denoised = self.denoiser.process(preprocessed, **self.config.denoising.params, **kwargs)
             results['pipeline_stages']['denoised'] = denoised
-            results['denoising_results'] = self.denoiser.get_results()
             results['performance_metrics']['denoising_time'] = (
                 cv2.getTickCount() - start_time
             ) / cv2.getTickFrequency()
+            print(f"Denoised - Shape: {denoised.shape}, dtype: {denoised.dtype}, range: [{denoised.min()}, {denoised.max()}]")
             
             # Step 2: Edge Detection
             start_time = cv2.getTickCount()
             print(f"Edge detection with {self.config.contour_detection.method}...")
-            edges = self.edge_detector.process(denoised, **kwargs)
+            edges = self.edge_detector.process(denoised, **self.config.contour_detection.params, **kwargs)
             results['pipeline_stages']['edges'] = edges
-            results['edge_detection_results'] = self.edge_detector.get_results()
             results['performance_metrics']['edge_detection_time'] = (
                 cv2.getTickCount() - start_time
             ) / cv2.getTickFrequency()
+            print(f"Edges - Shape: {edges.shape}, dtype: {edges.dtype}, range: [{edges.min()}, {edges.max()}]")
             
             # Step 3: Circle Detection
             start_time = cv2.getTickCount()
             print(f"Circle detection with {self.config.circle_detection.method}...")
-            circles = self.circle_detector.process(denoised, edges, **kwargs)
+            circles = self.circle_detector.process(denoised, edges, **self.config.circle_detection.params, **kwargs)
             results['pipeline_stages']['circles'] = circles
-            results['circle_detection_results'] = self.circle_detector.get_results()
             results['performance_metrics']['circle_detection_time'] = (
                 cv2.getTickCount() - start_time
             ) / cv2.getTickFrequency()
+            print(f"Detected {len(circles)} circles")
             
-            # Step 4: Enhanced tank component identification
-            identified, analysis = self._identify_tank_components_enhanced(
+            # Step 4: Tank component identification
+            identified, analysis = self._identify_tank_components(
                 circles, denoised.shape, image, **kwargs
             )
             results['identified_circles'] = identified
             results['tank_analysis'] = analysis
             
-            # Calculate overall quality metrics
+            # Calculate quality metrics
             results['quality_metrics'] = self._calculate_quality_metrics(
                 circles, identified, denoised.shape, **kwargs
             )
             
-            # Store performance metrics
+            # Total processing time
             total_time = sum([
                 results['performance_metrics']['preprocessing_time'],
                 results['performance_metrics']['denoising_time'],
@@ -185,7 +115,7 @@ class TankAnalysisPipeline:
         
         return results
     
-    def _identify_tank_components_enhanced(self, circles: List[Dict], 
+    def _identify_tank_components(self, circles: List[Dict], 
                                          image_shape: Tuple[int, int],
                                          original_image: np.ndarray,
                                          **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:

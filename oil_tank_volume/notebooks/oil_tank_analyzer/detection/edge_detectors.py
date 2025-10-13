@@ -2,6 +2,9 @@ import cv2
 import numpy as np
 from abc import abstractmethod
 from oil_tank_analyzer.core.base_processor import BaseProcessor, ProcessorRegistry
+import xarray as xr
+from matplotlib.path import Path
+import matplotlib.pyplot as plt
 
 class BaseEdgeDetector(BaseProcessor):
     """Base class for edge detection algorithms optimized for oil tanks."""
@@ -53,6 +56,340 @@ class BaseEdgeDetector(BaseProcessor):
     def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
         pass
 
+
+@ProcessorRegistry.register("xarray_contour_edges")
+class XArrayContourEdgeDetector(BaseEdgeDetector):
+    """Edge detection using XArray's contour algorithm - Simple and reliable version."""
+    
+    def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Simple and reliable edge detection using XArray contours.
+        This mimics exactly what works in the notebook.
+        """
+        # Use the exact same approach as the working notebook code
+        image_processed = image.astype(np.float32)
+        image_processed = (image_processed - image_processed.min()) / (image_processed.max() - image_processed.min() + 1e-8)
+        
+        # Create xarray exactly like in the notebook
+        height, width = image.shape
+        da = xr.DataArray(
+            image_processed,
+            dims=['y', 'x'],
+            coords={'y': range(height), 'x': range(width)},
+            name='intensity'
+        )
+        
+        # Parameters
+        levels = kwargs.get('levels', 5)
+        robust = kwargs.get('robust', True)
+        
+        # Create figure and get contours
+        fig, ax = plt.subplots(figsize=(8, 6))
+        edges = np.zeros((height, width), dtype=np.uint8)
+        
+        try:
+            # Plot contours - exactly like the working notebook code
+            contour_plot = da.plot.contour(
+                x='x', y='y',
+                levels=levels,
+                robust=robust,
+                ax=ax,
+                add_colorbar=False,
+                colors='white'
+            )
+            
+            # Extract and draw contours - simple and direct
+            for collection in contour_plot.collections:
+                paths = collection.get_paths()
+                for path in paths:
+                    if len(path.vertices) > 0:
+                        points = path.vertices.astype(np.int32)
+                        
+                        # Simple point filtering
+                        valid_indices = (points[:, 0] >= 0) & (points[:, 0] < width) & (points[:, 1] >= 0) & (points[:, 1] < height)
+                        valid_points = points[valid_indices]
+                        
+                        # Draw lines between consecutive points
+                        if len(valid_points) > 1:
+                            for i in range(len(valid_points) - 1):
+                                pt1 = tuple(valid_points[i])
+                                pt2 = tuple(valid_points[i + 1])
+                                cv2.line(edges, pt1, pt2, 255, 1)
+            
+            # Optional: clean up small edges
+            if kwargs.get('clean_edges', True):
+                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                edges_clean = np.zeros_like(edges)
+                for contour in contours:
+                    if cv2.arcLength(contour, True) > 10:  # minimum contour length
+                        cv2.drawContours(edges_clean, [contour], 0, 255, 1)
+                edges = edges_clean
+                
+            return edges
+            
+        finally:
+            plt.close(fig)
+
+
+@ProcessorRegistry.register("xarray_contourf_edges")
+class XArrayContourFEdgeDetector(BaseProcessor):
+    """Edge detection using XArray's filled contours."""
+    
+    def process(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Extract edges from filled contours by detecting boundaries between regions.
+        """
+        # Preprocess
+        image = self._preprocess_image(image, **kwargs)
+        
+        # Create xarray
+        da = self._numpy_to_xarray(image)
+        
+        # Extract edges directly from filled contour boundaries
+        edges = self._extract_contourf_boundaries(da, **kwargs)
+        
+        return edges
+    
+    def _preprocess_image(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """Preprocess image for contour detection."""
+        # Normalize
+        image = image.astype(np.float32)
+        
+        # Remove extreme outliers
+        if kwargs.get('remove_outliers', True):
+            p_low, p_high = np.percentile(image, [2, 98])
+            image = np.clip(image, p_low, p_high)
+        
+        # Normalize to 0-1 range
+        image = (image - image.min()) / (image.max() - image.min() + 1e-8)
+        
+        return image
+    
+    def _numpy_to_xarray(self, image: np.ndarray) -> xr.DataArray:
+        """Convert numpy array to xarray DataArray."""
+        height, width = image.shape
+        
+        # Create coordinate arrays
+        x_coords = np.arange(width)
+        y_coords = np.arange(height)
+        
+        # Create DataArray
+        da = xr.DataArray(
+            image,
+            dims=['y', 'x'],
+            coords={'y': y_coords, 'x': x_coords},
+            name='intensity'
+        )
+        
+        return da
+    
+    def _extract_contourf_boundaries(self, da: xr.DataArray, **kwargs) -> np.ndarray:
+        """Extract boundaries between filled contour regions."""
+        levels = kwargs.get('levels', 5)
+        robust = kwargs.get('robust', True)
+        
+        height, width = da.shape
+        edges = np.zeros((height, width), dtype=np.uint8)
+        
+        # Create figure and get filled contours
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        try:
+            # Plot filled contours
+            contourf_plot = da.plot.contourf(
+                x='x', y='y', 
+                levels=levels,
+                robust=robust,
+                ax=ax,
+                add_colorbar=False
+            )
+            
+            # For filled contours, we need to extract the boundaries differently
+            # The boundaries are the edges between different colored regions
+            for i, collection in enumerate(contourf_plot.collections):
+                # Get the paths for this collection (boundaries of this level)
+                paths = collection.get_paths()
+                for path in paths:
+                    if len(path.vertices) > 0:
+                        # Convert vertices to integer coordinates
+                        points = path.vertices.astype(np.int32)
+                        
+                        # Filter valid points
+                        valid_points = points[
+                            (points[:, 0] >= 0) & (points[:, 0] < width) &
+                            (points[:, 1] >= 0) & (points[:, 1] < height)
+                        ]
+                        
+                        # Draw the polygon boundary
+                        if len(valid_points) > 2:
+                            # Draw closed polygon
+                            for j in range(len(valid_points)):
+                                start_pt = valid_points[j]
+                                end_pt = valid_points[(j + 1) % len(valid_points)]
+                                cv2.line(edges, tuple(start_pt), tuple(end_pt), 255, 1)
+            
+            return edges
+            
+        finally:
+            plt.close(fig)
+
+
+@ProcessorRegistry.register("xarray_adaptive_contour")
+class XArrayAdaptiveContourEdgeDetector(BaseEdgeDetector):
+    """Adaptive contour detection with automatic level selection."""
+    
+    def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """Extract edges with adaptive level selection."""
+        # Preprocess
+        image_processed = image.astype(np.float32)
+        image_processed = (image_processed - image_processed.min()) / (image_processed.max() - image_processed.min() + 1e-8)
+        
+        # Create xarray
+        height, width = image.shape
+        da = xr.DataArray(
+            image_processed,
+            dims=['y', 'x'],
+            coords={'y': range(height), 'x': range(width)},
+            name='intensity'
+        )
+        
+        # Adaptive level selection based on data distribution
+        data = da.values.flatten()
+        if 'levels' not in kwargs:
+            # Use percentiles for robust level selection
+            percentiles = kwargs.get('percentiles', [10, 30, 50, 70, 90])
+            levels = np.percentile(data, percentiles)
+        else:
+            levels = kwargs.get('levels', 5)
+        
+        robust = kwargs.get('robust', True)
+        
+        # Create figure and get contours
+        fig, ax = plt.subplots(figsize=(8, 6))
+        edges = np.zeros((height, width), dtype=np.uint8)
+        
+        try:
+            # Plot contours with adaptive levels
+            contour_plot = da.plot.contour(
+                x='x', y='y',
+                levels=levels,
+                robust=robust,
+                ax=ax,
+                add_colorbar=False,
+                colors='white'
+            )
+            
+            # Extract and draw contours
+            for collection in contour_plot.collections:
+                paths = collection.get_paths()
+                for path in paths:
+                    if len(path.vertices) > 0:
+                        points = path.vertices.astype(np.int32)
+                        
+                        # Simple point filtering
+                        valid_indices = (points[:, 0] >= 0) & (points[:, 0] < width) & (points[:, 1] >= 0) & (points[:, 1] < height)
+                        valid_points = points[valid_indices]
+                        
+                        # Draw lines between consecutive points
+                        if len(valid_points) > 1:
+                            for i in range(len(valid_points) - 1):
+                                pt1 = tuple(valid_points[i])
+                                pt2 = tuple(valid_points[i + 1])
+                                cv2.line(edges, pt1, pt2, 255, 1)
+            
+            return edges
+            
+        finally:
+            plt.close(fig)
+
+
+@ProcessorRegistry.register("xarray_multiscale_contour")
+class XArrayMultiscaleContourEdgeDetector(BaseEdgeDetector):
+    """Multi-scale contour detection for different feature sizes."""
+    
+    def _detect_edges(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """Multi-scale contour edge detection."""
+        scales = kwargs.get('scales', [1.0, 0.5, 2.0])  # Different scales
+        combined_edges = np.zeros_like(image, dtype=np.uint8)
+        
+        for scale in scales:
+            # Resize image
+            if scale != 1.0:
+                h, w = image.shape
+                new_size = (int(w * scale), int(h * scale))
+                scaled_img = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
+            else:
+                scaled_img = image
+            
+            # Use the simple contour detector at this scale
+            scale_edges = self._detect_contours_at_scale(scaled_img, **kwargs)
+            
+            # Resize back to original size
+            if scale != 1.0:
+                scale_edges = cv2.resize(scale_edges, (image.shape[1], image.shape[0]))
+            
+            # Combine edges
+            combined_edges = np.bitwise_or(combined_edges, scale_edges)
+        
+        return combined_edges
+    
+    def _detect_contours_at_scale(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """Detect contours at a specific scale."""
+        # Preprocess
+        image_processed = image.astype(np.float32)
+        image_processed = (image_processed - image_processed.min()) / (image_processed.max() - image_processed.min() + 1e-8)
+        
+        # Create xarray
+        height, width = image.shape
+        da = xr.DataArray(
+            image_processed,
+            dims=['y', 'x'],
+            coords={'y': range(height), 'x': range(width)},
+            name='intensity'
+        )
+        
+        # Parameters
+        levels = kwargs.get('levels', 5)
+        robust = kwargs.get('robust', True)
+        
+        # Create figure and get contours
+        fig, ax = plt.subplots(figsize=(8, 6))
+        edges = np.zeros((height, width), dtype=np.uint8)
+        
+        try:
+            # Plot contours
+            contour_plot = da.plot.contour(
+                x='x', y='y',
+                levels=levels,
+                robust=robust,
+                ax=ax,
+                add_colorbar=False,
+                colors='white'
+            )
+            
+            # Extract and draw contours
+            for collection in contour_plot.collections:
+                paths = collection.get_paths()
+                for path in paths:
+                    if len(path.vertices) > 0:
+                        points = path.vertices.astype(np.int32)
+                        
+                        # Simple point filtering
+                        valid_indices = (points[:, 0] >= 0) & (points[:, 0] < width) & (points[:, 1] >= 0) & (points[:, 1] < height)
+                        valid_points = points[valid_indices]
+                        
+                        # Draw lines between consecutive points
+                        if len(valid_points) > 1:
+                            for i in range(len(valid_points) - 1):
+                                pt1 = tuple(valid_points[i])
+                                pt2 = tuple(valid_points[i + 1])
+                                cv2.line(edges, pt1, pt2, 255, 1)
+            
+            return edges
+            
+        finally:
+            plt.close(fig)
+                
 @ProcessorRegistry.register("canny_tank")
 class CannyTankEdgeDetector(BaseEdgeDetector):
     """Canny edge detector optimized for oil tank circles."""
