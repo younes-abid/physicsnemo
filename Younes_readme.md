@@ -30,7 +30,7 @@ tmux new -s train_diffusion
 bash scripts/run_docker.sh
 docker exec -it physiscsnemo_container /bin/bash
 
-bash scripts/train_diffusion.sh
+bash scripts/train_diffusion_normal.sh
 # Detach from the session by pressing Ctrl + B, then D
 # To reattach to the session later, use:
 tmux attach -t train_diffusion
@@ -62,6 +62,8 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 # To run Tensorboard, you can use the following command:
 
 ```bash
+apt update && apt install lsof && sudo lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
+
 tensorboard --logdir=/app/tensorboard/regression --host 0.0.0.0 --port 6006
 tensorboard --logdir=/app/tensorboard/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
