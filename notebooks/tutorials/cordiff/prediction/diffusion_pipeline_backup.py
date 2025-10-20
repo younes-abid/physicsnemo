@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from typing import Dict, Any, Optional, Tuple
 from physicsnemo.models.diffusion.preconditioning import EDMPrecondSuperResolution
 from physicsnemo.launch.utils.checkpoint import load_checkpoint
+from physicsnemo.utils.diffusion import deterministic_sampler
 
 
 class DiffusionPipeline:
@@ -230,19 +231,16 @@ class DiffusionPipeline:
     def predict(self, input_tensor: torch.Tensor, regression_output: torch.Tensor, 
                data_manager, num_iterations: int = 1) -> Tuple[torch.Tensor, np.ndarray, np.ndarray]:
         """
-        Run FIXED diffusion prediction using residual-based approach.
+        Run CORRECTED diffusion prediction using proper EDM sampling.
         
-        CRITICAL FIXES APPLIED:
-        1. Uses residual-based approach (like training)
-        2. Proper model calling convention for EDMPrecondSuperResolution
-        3. Correct input tensor preparation
-        4. Manual iterative denoising (since deterministic_sampler doesn't work with EDMPrecondSuperResolution)
+        CRITICAL: This now uses the proper EDM sampler with multiple denoising steps,
+        not just a single forward pass!
         
         Args:
             input_tensor: Normalized input tensor of shape (1, 16, H, W)
             regression_output: NORMALIZED output from regression model of shape (1, 2, H, W)
             data_manager: DataManager instance for statistics
-            num_iterations: Number of diffusion iterations to run
+            num_iterations: Number of diffusion iterations to run (typically 1 with proper sampling)
             
         Returns:
             Tuple of (final_hr_output_normalized, u10_denorm, v10_denorm)
@@ -250,12 +248,10 @@ class DiffusionPipeline:
         if not self.model_loaded:
             raise ValueError("No diffusion model loaded. Call load_model() first.")
         
-        print(f"=== Running FIXED Diffusion Prediction (Residual-Based) ===")
-        print(f"KEY FIXES:")
-        print(f"  1. Using residual-based approach (difference from regression)")
-        print(f"  2. Proper EDMPrecondSuperResolution model interface")
-        print(f"  3. Manual iterative denoising with decreasing noise levels")
-        print(f"  4. Correct input tensor preparation")
+        print(f"=== Running CORRECTED Diffusion Prediction with Proper EDM Sampling ===")
+        print(f"CRITICAL FIX: Using {self.sampling_params['num_steps']} denoising steps instead of 1!")
+        print(f"Noise schedule: σ_min={self.sampling_params['sigma_min']}, σ_max={self.sampling_params['sigma_max']}")
+        print(f"Solver: {self.sampling_params['solver']}, discretization: {self.sampling_params['discretization']}")
         
         try:
             with torch.no_grad():
@@ -263,31 +259,21 @@ class DiffusionPipeline:
                 input_tensor = input_tensor.to(self.device)
                 regression_output = regression_output.to(self.device)
                 
-                # CRITICAL FIX 1: Work with residuals, not absolute values
-                # Initialize residual as small random noise (model learns to denoise this)
-                initial_residual = torch.randn_like(regression_output) * 0.1
+                # Prepare conditioning (2 channels - means of U10/V10 in normalized space = 0)
+                conditioning = torch.zeros(1, 2, 432, 432, device=self.device)
                 
-                # Prepare conditioning input exactly like in training
-                # From training: img_lr shape is (batch, 18, H, W) = 16 variables + 2 regression outputs
-                conditioning_lr = torch.cat([input_tensor, regression_output], dim=1)  # (1, 18, H, W)
+                # Combine inputs (16 vars + 2 conditioning = 18 channels)
+                # Model will add 4 grid channels internally
+                low_res_input = torch.cat([input_tensor, conditioning], dim=1)
                 
                 print(f"✓ Input preparation completed")
-                print(f"  - LR conditioning shape: {conditioning_lr.shape}")
-                print(f"  - Initial residual shape: {initial_residual.shape}")
+                print(f"  - LR input shape: {low_res_input.shape}")
+                print(f"  - Regression output (normalized) shape: {regression_output.shape}")
                 print(f"  - Regression output range: [{regression_output.min():.3f}, {regression_output.max():.3f}]")
                 
-                # CRITICAL FIX 2: Manual iterative denoising process
-                # Use decreasing noise levels from high to low
-                sigma_max = self.sampling_params["sigma_max"]
-                sigma_min = self.sampling_params["sigma_min"] 
-                num_steps = self.sampling_params["num_steps"]
-                
-                # Create noise schedule (exponential decay)
-                step_indices = torch.arange(num_steps, device=self.device, dtype=torch.float32)
-                sigma_schedule = (sigma_max ** (1/7.0) + step_indices / (num_steps - 1) * 
-                                (sigma_min ** (1/7.0) - sigma_max ** (1/7.0))) ** 7.0
-                
-                print(f"✓ Noise schedule: {sigma_schedule[0]:.3f} → {sigma_schedule[-1]:.3f}")
+                # CRITICAL FIX: Use proper EDM sampling instead of single forward pass
+                # Initialize with regression output (not random noise)
+                latents = regression_output.clone()
                 
                 # Timing
                 start_time = torch.cuda.Event(enable_timing=True) if torch.cuda.is_available() else None
@@ -296,47 +282,24 @@ class DiffusionPipeline:
                 if torch.cuda.is_available():
                     start_time.record()
                 
-                # CRITICAL FIX 3: Iterative denoising with proper model interface
-                current_residual = initial_residual.clone()
-                
-                for i, sigma in enumerate(sigma_schedule):
-                    # Add noise for current step
-                    if i == 0:
-                        noisy_residual = current_residual + torch.randn_like(current_residual) * sigma
-                    else:
-                        noisy_residual = current_residual
-                    
-                    # CRITICAL FIX 4: Use correct EDMPrecondSuperResolution interface
-                    # The model expects: (x, img_lr, sigma) not the EDMPrecond interface
-                    sigma_tensor = torch.full((1,), sigma.item(), device=self.device)
-                    
-                    # Model call with correct signature for EDMPrecondSuperResolution
-                    predicted_residual = self.model(
-                        x=noisy_residual,           # The noisy residual to denoise
-                        img_lr=conditioning_lr,     # Low-res conditioning (16 vars + 2 regression)
-                        sigma=sigma_tensor          # Current noise level
-                    )
-                    
-                    # Update residual for next iteration
-                    if i < num_steps - 1:
-                        # Simple step towards predicted residual
-                        step_size = 0.8  # Conservative step size
-                        current_residual = current_residual * (1 - step_size) + predicted_residual * step_size
-                    else:
-                        current_residual = predicted_residual
-                
-                # CRITICAL FIX 5: Add residual to regression output
-                final_hr_output_normalized = regression_output + current_residual
+                # Run proper EDM sampling - THIS IS THE KEY FIX!
+                print(f"  - Running EDM sampling with {self.sampling_params['num_steps']} steps...")
+                final_hr_output_normalized = deterministic_sampler(
+                    net=self.model,
+                    latents=latents,
+                    img_lr=low_res_input,
+                    class_labels=None,
+                    **self.sampling_params
+                )
                 
                 if torch.cuda.is_available():
                     end_time.record()
                     torch.cuda.synchronize()
                     inference_time = start_time.elapsed_time(end_time)
-                    print(f"✓ FIXED diffusion inference time: {inference_time:.2f} ms")
+                    print(f"✓ CORRECTED EDM sampling time: {inference_time:.2f} ms")
                 
                 print(f"✓ Final HR output shape: {final_hr_output_normalized.shape}")
                 print(f"✓ Final HR output range (normalized): [{final_hr_output_normalized.min():.3f}, {final_hr_output_normalized.max():.3f}]")
-                print(f"✓ Residual magnitude: {current_residual.abs().mean():.6f}")
                 
                 # Denormalize final predictions for visualization and metrics
                 u10_pred_norm = final_hr_output_normalized[0, 0].cpu().numpy()
@@ -349,11 +312,7 @@ class DiffusionPipeline:
                 print(f"  - U10 range (denormalized): [{u10_denorm.min():.3f}, {u10_denorm.max():.3f}]")
                 print(f"  - V10 range (denormalized): [{v10_denorm.min():.3f}, {v10_denorm.max():.3f}]")
                 
-                print(f"🎉 COMPREHENSIVE FIX APPLIED:")
-                print(f"   ✓ Residual-based approach (matches training)")
-                print(f"   ✓ Proper model interface for EDMPrecondSuperResolution")
-                print(f"   ✓ Manual iterative denoising with {num_steps} steps")
-                print(f"   ✓ Correct tensor preparation and conditioning")
+                print(f"🎉 CRITICAL FIX APPLIED: Using proper EDM sampling instead of single forward pass!")
                 
                 return final_hr_output_normalized, u10_denorm, v10_denorm
                 
