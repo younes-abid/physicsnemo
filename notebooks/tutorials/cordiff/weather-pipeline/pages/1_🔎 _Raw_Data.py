@@ -1,191 +1,556 @@
 import streamlit as st
 import os
+import json
 import netCDF4 as nc
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
 
 from utils.states import init_state_variables, reset_state_variables, debug_state
-from  utils.files import list_nc_files_raw_data
+from utils.files import list_nc_files_raw_data, list_json_files, load_stats_file, validate_nc_file
+
 # Initialize session state variables
 init_state_variables()
 
-# Function to explore a NetCDF file
-def explore_nc_file(file_path):
-    try:
-        # Open the NetCDF file
-        dataset = nc.Dataset(file_path, "r")
-        st.subheader("📅 Available Dates")
+# Page configuration
+st.set_page_config(
+    page_title="Weather Pipeline - Raw Data",
+    page_icon="🔎",
+    layout="wide"
+)
 
-        if "time" in dataset.variables:
-            time_var = dataset.variables["time"]
-            dates = pd.to_datetime(time_var[:], unit="s")  # Convert to datetime
-            st.write(f"**Number of Available Dates:** {len(dates)}")
-            st.write(f"**First Date:** {dates.min()}")
-            st.write(f"**Last Date:** {dates.max()}")
+def display_stats_overview(stats_data):
+    """Display a beautiful overview of the stats data."""
+    if not stats_data:
+        return
+    
+    st.markdown("### 📊 Statistics Overview")
+    
+    # Handle both possible structures
+    input_vars = stats_data.get("input_variables", stats_data.get("input", {}))
+    output_vars = stats_data.get("output_variables", stats_data.get("output", {}))
+    invariant_vars = stats_data.get("invariant", {})
+    
+    # Create metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("📥 Input Variables", len(input_vars))
+    with col2:
+        st.metric("📤 Output Variables", len(output_vars))
+    with col3:
+        st.metric("🔧 Invariant Variables", len(invariant_vars))
+    with col4:
+        total_vars = len(input_vars) + len(output_vars) + len(invariant_vars)
+        st.metric("🔢 Total Variables", total_vars)
 
-            # Create date selection - update session state when changed
-            selected_date = st.selectbox(
-                "Select a date for analysis: Regression, Diffusion and Visualization",
-                dates,
-                index=st.session_state.raw_data["date_index"] if st.session_state.raw_data["date_index"] is not None else None,
-                key="date_selector_raw_data"
-            )
-            
-            if selected_date is not None:
-                st.session_state.raw_data["date"] = selected_date
-                st.session_state.raw_data["date_index"] = dates.get_loc(selected_date)
-                st.write(f"**Selected Date Index:** {st.session_state.raw_data['date_index']}")
+def display_stats_details(stats_data):
+    """Display detailed statistics with beautiful formatting."""
+    if not stats_data:
+        return
+    
+    st.markdown("### 📋 Detailed Statistics")
+    
+    # Handle both possible structures
+    input_vars = stats_data.get("input_variables", stats_data.get("input", {}))
+    output_vars = stats_data.get("output_variables", stats_data.get("output", {}))
+    invariant_vars = stats_data.get("invariant", {})
+    
+    if input_vars or output_vars or invariant_vars:
+        tabs = []
+        tab_names = []
+        
+        if input_vars:
+            tabs.append("📥 Input Variables")
+            tab_names.append("input")
+        if output_vars:
+            tabs.append("📤 Output Variables") 
+            tab_names.append("output")
+        if invariant_vars:
+            tabs.append("🔧 Invariant Variables")
+            tab_names.append("invariant")
+        
+        if len(tabs) == 1:
+            # Single tab case
+            if input_vars:
+                display_variable_stats(input_vars, "Input")
+            elif output_vars:
+                display_variable_stats(output_vars, "Output")
+            elif invariant_vars:
+                display_variable_stats(invariant_vars, "Invariant")
         else:
-            st.warning("No `time` variable found in the root dataset.")
-            st.session_state.raw_data["date_index"] = None
-            st.session_state.raw_data["date"] = None
+            # Multiple tabs case
+            tab_objects = st.tabs(tabs)
+            
+            for i, (tab_obj, tab_name) in enumerate(zip(tab_objects, tab_names)):
+                with tab_obj:
+                    if tab_name == "input" and input_vars:
+                        display_variable_stats(input_vars, "Input")
+                    elif tab_name == "output" and output_vars:
+                        display_variable_stats(output_vars, "Output")
+                    elif tab_name == "invariant" and invariant_vars:
+                        display_variable_stats(invariant_vars, "Invariant")
+                    else:
+                        st.info(f"No {tab_name} variables found in stats file.")
+    else:
+        st.warning("No variable statistics found in the stats file.")
 
-        dataset.close()
+def display_variable_stats(variables_dict, var_type):
+    """Display statistics for a set of variables."""
+    if not variables_dict:
+        return
+    
+    # Create a DataFrame for easy display
+    stats_list = []
+    for var_name, var_stats in variables_dict.items():
+        stats_list.append({
+            "Variable": var_name,
+            "Mean": f"{var_stats.get('mean', 0):.4f}",
+            "Std": f"{var_stats.get('std', 0):.4f}",
+        })
+    
+    df = pd.DataFrame(stats_list)
+    
+    # Display the table
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
+    
+
+def handle_data_dir_change():
+    """Handle data directory path changes."""
+    new_data_dir = st.session_state.data_dir_input
+    if new_data_dir != st.session_state.raw_data["data_dir_path"]:
+        st.session_state.raw_data["data_dir_path"] = new_data_dir
+        st.session_state.raw_data["data_nc_files"] = list_nc_files_raw_data(new_data_dir)
+        st.session_state.raw_data["data_file"] = None
+        st.session_state.raw_data["data_file_path"] = None
+        st.session_state.raw_data["date"] = None
+        st.session_state.raw_data["date_index"] = None
+        st.session_state.raw_data["data_file_loaded"] = False
+
+def handle_stats_dir_change():
+    """Handle stats directory path changes."""
+    new_stats_dir = st.session_state.stats_dir_input
+    if new_stats_dir != st.session_state.raw_data["stats_dir_path"]:
+        st.session_state.raw_data["stats_dir_path"] = new_stats_dir
+        st.session_state.raw_data["stats_json_files"] = list_json_files(new_stats_dir)
+        st.session_state.raw_data["stats_file"] = None
+        st.session_state.raw_data["stats_file_path"] = None
+        st.session_state.raw_data["stats_data"] = None
+        st.session_state.raw_data["stats_file_loaded"] = False
+
+def handle_data_file_selection():
+    """Handle data file selection changes."""
+    if st.session_state.data_file_selector != st.session_state.raw_data["data_file"]:
+        st.session_state.raw_data["data_file"] = st.session_state.data_file_selector
+        st.session_state.raw_data["data_file_path"] = os.path.join(
+            st.session_state.raw_data["data_dir_path"], 
+            st.session_state.raw_data["data_file"]
+        )
+        st.session_state.raw_data["date"] = None
+        st.session_state.raw_data["date_index"] = None
+        st.session_state.raw_data["data_file_loaded"] = True
+
+def handle_stats_file_selection():
+    """Handle stats file selection changes."""
+    selected_stats_file = st.session_state.get("stats_file_selector")
+    
+    # Debug: Log the selection
+    print(f"DEBUG: Selected stats file: {selected_stats_file}")
+    print(f"DEBUG: Current stats file in session: {st.session_state.raw_data['stats_file']}")
+    
+    if selected_stats_file and selected_stats_file != st.session_state.raw_data["stats_file"]:
+        # Update session state
+        st.session_state.raw_data["stats_file"] = selected_stats_file
+        st.session_state.raw_data["stats_file_path"] = os.path.join(
+            st.session_state.raw_data["stats_dir_path"], 
+            selected_stats_file
+        )
+        
+        print(f"DEBUG: Updated stats_file_path to: {st.session_state.raw_data['stats_file_path']}")
+        
+        # Load the stats file immediately
+        if st.session_state.raw_data["stats_file_path"]:
+            stats_data, error = load_stats_file(st.session_state.raw_data["stats_file_path"])
+            if error:
+                st.error(f"Error loading stats file: {error}")
+                st.session_state.raw_data["stats_data"] = None
+                st.session_state.raw_data["stats_file_loaded"] = False
+                print(f"DEBUG: Error loading stats file: {error}")
+            else:
+                st.session_state.raw_data["stats_data"] = stats_data
+                st.session_state.raw_data["stats_file_loaded"] = True
+                print(f"DEBUG: Successfully loaded stats file")
+                
+        # Force a rerun to update the UI
+        st.rerun()
+
+def explore_nc_file(file_path):
+    """Explore NetCDF file and handle date selection."""
+    try:
+        with nc.Dataset(file_path, "r") as dataset:
+            st.markdown("### 📅 Available Dates")
+
+            if "time" in dataset.variables:
+                time_var = dataset.variables["time"]
+                dates = pd.to_datetime(time_var[:], unit="s")
+                
+                # Display date information in a nice format
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📊 Total Dates", len(dates))
+                with col2:
+                    st.metric("🚀 First Date", dates.min().strftime("%Y-%m-%d"))
+                with col3:
+                    st.metric("🏁 Last Date", dates.max().strftime("%Y-%m-%d"))
+
+                # Date selection with improved UI
+                st.markdown("#### Select Date for Analysis")
+                
+                # Prepare options with None as first option
+                date_options = ["Select date..."] + [d.strftime("%Y-%m-%d %H:%M:%S") for d in dates]
+                
+                # Get current index, default to 0 (Select...)
+                current_date_index = st.session_state.raw_data["date_selectbox_index"]
+                if current_date_index is None:
+                    current_date_index = 0
+                
+                selected_date_index = st.selectbox(
+                    "Choose a date for regression, diffusion and visualization:",
+                    range(len(date_options)),
+                    format_func=lambda x: date_options[x],
+                    index=current_date_index,
+                    key="date_selector_raw_data"
+                )
+                
+                # Update session state
+                st.session_state.raw_data["date_selectbox_index"] = selected_date_index
+                
+                if selected_date_index == 0:  # "Select date..." option
+                    st.session_state.raw_data["date"] = None
+                    st.session_state.raw_data["date_index"] = None
+                else:
+                    actual_index = selected_date_index - 1  # Adjust for "Select..." option
+                    selected_date = dates[actual_index]
+                    st.session_state.raw_data["date"] = selected_date
+                    st.session_state.raw_data["date_index"] = actual_index
+                    
+                    # Display selected date info nicely
+                    st.success(f"✅ **Selected Date:** {selected_date.strftime('%Y-%m-%d %H:%M:%S')} (Index: {st.session_state.raw_data['date_index']})")
+            else:
+                st.warning("⚠️ No `time` variable found in the dataset.")
+                st.session_state.raw_data["date_index"] = None
+                st.session_state.raw_data["date"] = None
 
     except Exception as e:
-        st.error(f"An error occurred while exploring the file: {e}")
+        st.error(f"❌ Error exploring file: {e}")
         st.session_state.raw_data["date_index"] = None
         st.session_state.raw_data["date"] = None
 
-# Function to explore groups and display dates
-def explore_groups_and_dates(file_path):
+def explore_data_groups(file_path):
+    """Explore data groups with enhanced visualization."""
     try:
         groups = ["Input", "Output"]
 
         for group in groups:
-            group_data = xr.open_dataset(file_path, group=group.lower())
-            st.subheader(f"📂 Explore data in {group} Group")
-
-            # Collapsible section for variable preview - ONLY SHOW IF DATE IS SELECTED
-            if st.session_state.raw_data["date_index"] is not None:
-                with st.expander("🔍 Preview Variable"):
-                    # Variable selection - update session state when changed
+            with st.expander(f"📂 Explore {group} Data Group", expanded=False):
+                if st.session_state.raw_data["date_index"] is not None:
+                    group_data = xr.open_dataset(file_path, group=group.lower())
+                    
+                    # Display group overview
+                    st.markdown(f"#### {group} Group Overview")
                     variable_options = list(group_data.data_vars.keys())
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("🔢 Variables Count", len(variable_options))
+                    with col2:
+                        if variable_options:
+                            sample_var = group_data[variable_options[0]]
+                            shape = sample_var.shape
+                            st.metric("📏 Data Shape", f"{shape}")
 
-                    selected_var = st.selectbox(
-                        f"Select a variable to preview in {group}:",
-                        variable_options,
+                    # Variable selection and preview
+                    # Prepare options with None as first option
+                    var_options = ["Select variable..."] + variable_options
+                    
+                    # Get current index for this group, default to 0 (Select...)
+                    var_index_key = f"{group.lower()}_var_index"
+                    if var_index_key not in st.session_state.raw_data:
+                        st.session_state.raw_data[var_index_key] = 0
+                    
+                    current_var_index = st.session_state.raw_data[var_index_key]
+                    if current_var_index is None:
+                        current_var_index = 0
+                    
+                    selected_var_index = st.selectbox(
+                        f"Select variable to preview:",
+                        range(len(var_options)),
+                        format_func=lambda x: var_options[x],
+                        index=current_var_index,
                         key=f"var_selector_{group}"
                     )
+                    
+                    # Update session state
+                    st.session_state.raw_data[var_index_key] = selected_var_index
+                    
+                    if selected_var_index == 0:  # "Select variable..." option
+                        selected_var = None
+                    else:
+                        selected_var = var_options[selected_var_index]
 
                     if selected_var:
-                        st.write(f"**Variable:** `{selected_var}`")
-
-                        # Extract the selected variable for the selected date
+                        # Extract data for selected date
                         var_data = group_data[selected_var].isel(sample=st.session_state.raw_data["date_index"])
 
-                        # Display basic statistics
-                        st.markdown("### 📊 Statistics")
-                        st.write(f"**Mean:** {var_data.mean().item():.4f}")
-                        st.write(f"**Min:** {var_data.min().item():.4f}")
-                        st.write(f"**Max:** {var_data.max().item():.4f}")
-                        st.write(f"**Std Dev:** {var_data.std().item():.4f}")
+                        # Create tabs for different views
+                        tab1, tab2, tab3 = st.tabs(["📊 Statistics", "📈 Distribution", "🗺️ Spatial View"])
+                        
+                        with tab1:
+                            # Statistics in a nice format
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("📊 Mean", f"{var_data.mean().item():.4f}")
+                            with col2:
+                                st.metric("📈 Std Dev", f"{var_data.std().item():.4f}")
+                            with col3:
+                                st.metric("⬇️ Min", f"{var_data.min().item():.4f}")
+                            with col4:
+                                st.metric("⬆️ Max", f"{var_data.max().item():.4f}")
+                        
+                        with tab2:
+                            # Enhanced histogram
+                            flattened_data = var_data.values.flatten()
+                            
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+                            
+                            # Histogram
+                            ax1.hist(flattened_data, bins=50, alpha=0.7, color='skyblue', edgecolor='black')
+                            ax1.set_title(f'{selected_var} - Distribution')
+                            ax1.set_xlabel('Value')
+                            ax1.set_ylabel('Frequency')
+                            ax1.grid(True, alpha=0.3)
+                            
+                            # Box plot
+                            ax2.boxplot(flattened_data, vert=True)
+                            ax2.set_title(f'{selected_var} - Box Plot')
+                            ax2.set_ylabel('Value')
+                            ax2.grid(True, alpha=0.3)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        
+                        with tab3:
+                            # Enhanced spatial plot
+                            fig, ax = plt.subplots(figsize=(10, 8))
+                            im = var_data.plot(
+                                ax=ax,
+                                cmap="viridis",
+                                robust=True,
+                                add_colorbar=True,
+                                cbar_kwargs={"label": f"{selected_var}", "shrink": 0.8}
+                            )
+                            ax.set_title(f"{selected_var} - Spatial Distribution (Index: {st.session_state.raw_data['date_index']})")
+                            ax.set_aspect('equal')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
 
-                        # Display histogram
-                        st.markdown("### 📈 Histogram")
-                        flattened_data = var_data.values.flatten()
-                        st.bar_chart(pd.Series(flattened_data).value_counts(bins=30).sort_index())
-
-                        # Display raster plot
-                        st.markdown("### 🗺️ Raster Plot")
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        var_data.plot(
-                            ax=ax,
-                            cmap="viridis",
-                            robust=True,
-                            add_colorbar=True,
-                            cbar_kwargs={"label": selected_var}
-                        )
-                        ax.set_title(f"{selected_var} - Index {st.session_state.raw_data['date_index']}")
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    else:
-                        st.info("Please select a variable to see statistics.")
-            else:
-                with st.expander("🔍 Preview Variable"):
-                    st.info("Please select a date first to preview variables.")
-
-            group_data.close()
-            st.success(f"Successfully explored the {group} group.")
-
-        st.success("All groups have been successfully explored.")
+                    group_data.close()
+                else:
+                    st.info("🔍 Please select a date first to explore data groups.")
 
     except Exception as e:
-        st.error(f"An error occurred while exploring groups and dates: {e}")
+        st.error(f"❌ Error exploring data groups: {e}")
 
-# Function to handle base path changes
-def handle_base_path_raw_data_change():
-    new_base_path_raw_data = st.session_state.base_path_raw_data_input
-    if new_base_path_raw_data != st.session_state.raw_data["base_path"]:
-        st.session_state.raw_data["base_path"] = new_base_path_raw_data
-        st.session_state.raw_data["nc_files"] = list_nc_files_raw_data(new_base_path_raw_data)
-        st.session_state.raw_data["file"] = None
-        st.session_state.raw_data["file_path"] = None
-        st.session_state.raw_data["date"] = None
-        st.session_state.raw_data["date_index"] = None
-        st.session_state.raw_data["file_loaded"] = False
+# Main UI
+st.title("🔎 Raw Data Configuration")
+st.markdown("Configure your data files, statistics, and select analysis parameters.")
 
-# Function to handle file selection changes
-def handle_file_selection():
-    # The selectbox value is stored in the main session_state, not in raw_data
-    if st.session_state.file_selector_raw_data != st.session_state.raw_data["file"]:
-        st.session_state.raw_data["file"] = st.session_state.file_selector_raw_data
-        st.session_state.raw_data["file_path"] = os.path.join(st.session_state.raw_data["base_path"], st.session_state.raw_data["file"])
-        st.session_state.raw_data["date"] = None
-        st.session_state.raw_data["date_index"] = None
-        st.session_state.raw_data["file_loaded"] = True
+# Progress indicator
+data_ready = bool(st.session_state.raw_data["data_file_path"])
+stats_ready = bool(st.session_state.raw_data["stats_file_path"])
+date_ready = bool(st.session_state.raw_data["date"])
 
-# Main logic
-st.title("🔎 Raw Data")
+progress = sum([data_ready, stats_ready, date_ready])
+st.progress(progress / 3)
 
-# Sidebar for navigation
-st.sidebar.header("Navigation")
+col1, col2, col3 = st.columns(3)
+with col1:
+    if data_ready:
+        st.success("✅ Data File")
+    else:
+        st.error("❌ Data File")
+with col2:
+    if stats_ready:
+        st.success("✅ Stats File")
+    else:
+        st.error("❌ Stats File")
+with col3:
+    if date_ready:
+        st.success("✅ Date Selected")
+    else:
+        st.error("❌ Date Selected")
 
-# Base path input with callback
-st.sidebar.text_input(
-    "Enter the base directory path:",
-    value=st.session_state.raw_data["base_path"],
-    key="base_path_raw_data_input",
-    on_change=handle_base_path_raw_data_change
-)
+st.markdown("---")
 
-# Get NC files (cached in session state)
-if not st.session_state.raw_data["nc_files"]:
-    st.session_state.raw_data["nc_files"] = list_nc_files_raw_data(st.session_state.raw_data["base_path"])
+# Main content in two columns
+col1, col2 = st.columns([1, 1])
 
-if not st.session_state.raw_data["nc_files"]:
-    st.sidebar.warning("No `.nc` files found in the selected directory.")
-else:
-    # File selector with callback - FIXED KEY
-    st.sidebar.selectbox(
-        "Select a `.nc` file:",
-        st.session_state.raw_data["nc_files"],
-        key="file_selector_raw_data", 
-        on_change=handle_file_selection
+with col1:
+    st.markdown("### 📁 Data File Configuration")
+    
+    # Data directory input
+    st.text_input(
+        "📂 Data Directory Path:",
+        value=st.session_state.raw_data["data_dir_path"],
+        key="data_dir_input",
+        on_change=handle_data_dir_change,
+        help="Path to directory containing .nc data files"
     )
-
-    # Auto-load if file is selected or already loaded
-    if st.session_state.raw_data["file"] or st.session_state.raw_data["file_loaded"]:
-        if st.session_state.raw_data["file_path"]:
-            st.write(f"### Selected File: `{st.session_state.raw_data['file_path']}`")
-
-            explore_nc_file(st.session_state.raw_data["file_path"])
-
-            # Only show groups if a date is selected
-            if st.session_state.raw_data["date_index"] is not None:
-                explore_groups_and_dates(st.session_state.raw_data["file_path"])
+    
+    # Update file list if needed
+    if not st.session_state.raw_data["data_nc_files"]:
+        st.session_state.raw_data["data_nc_files"] = list_nc_files_raw_data(
+            st.session_state.raw_data["data_dir_path"]
+        )
+    
+    # Data file selection
+    if st.session_state.raw_data["data_nc_files"]:
+        st.selectbox(
+            "📄 Select Data File (.nc):",
+            st.session_state.raw_data["data_nc_files"],
+            key="data_file_selector",
+            on_change=handle_data_file_selection,
+            help="Choose the NetCDF file containing your weather data"
+        )
+        
+        # Show file info if selected
+        if st.session_state.raw_data["data_file_path"]:
+            st.success(f"✅ **Selected:** `{st.session_state.raw_data['data_file']}`")
+            
+            # File validation
+            is_valid, error = validate_nc_file(st.session_state.raw_data["data_file_path"])
+            if is_valid:
+                st.success("🔍 File validation: ✅ Valid NetCDF structure")
             else:
-                st.info("Select a date to explore the data groups and variables.")
-        else:
-            st.info("Please select a file to begin.")
+                st.error(f"🔍 File validation: ❌ {error}")
+    else:
+        st.warning("⚠️ No .nc files found in the selected directory.")
 
-# Add a reset button
-if st.sidebar.button("Reset Raw Data Selections"):
+with col2:
+    st.markdown("### 📊 Statistics File Configuration")
+    
+    # Stats directory input
+    st.text_input(
+        "📂 Statistics Directory Path:",
+        value=st.session_state.raw_data["stats_dir_path"],
+        key="stats_dir_input",
+        on_change=handle_stats_dir_change,
+        help="Path to directory containing .json statistics files"
+    )
+    
+    # Update file list if needed
+    if not st.session_state.raw_data["stats_json_files"]:
+        st.session_state.raw_data["stats_json_files"] = list_json_files(
+            st.session_state.raw_data["stats_dir_path"]
+        )
+    
+    # Stats file selection
+    if st.session_state.raw_data["stats_json_files"]:
+        # Calculate the proper index for the selectbox
+        current_stats_file = st.session_state.raw_data["stats_file"]
+        try:
+            current_index = st.session_state.raw_data["stats_json_files"].index(current_stats_file) if current_stats_file in st.session_state.raw_data["stats_json_files"] else None
+        except (ValueError, TypeError):
+            current_index = None
+            
+        # If there's only one file and it's not loaded yet, load it automatically
+        if (len(st.session_state.raw_data["stats_json_files"]) == 1 and 
+            not st.session_state.raw_data["stats_file_loaded"]):
+            
+            stats_file = st.session_state.raw_data["stats_json_files"][0]
+            st.session_state.raw_data["stats_file"] = stats_file
+            st.session_state.raw_data["stats_file_path"] = os.path.join(
+                st.session_state.raw_data["stats_dir_path"], 
+                stats_file
+            )
+            
+            # Load the stats file immediately
+            stats_data, error = load_stats_file(st.session_state.raw_data["stats_file_path"])
+            if error:
+                st.error(f"Error loading stats file: {error}")
+                st.session_state.raw_data["stats_data"] = None
+                st.session_state.raw_data["stats_file_loaded"] = False
+            else:
+                st.session_state.raw_data["stats_data"] = stats_data
+                st.session_state.raw_data["stats_file_loaded"] = True
+            
+        v = st.selectbox(
+            "📄 Select Statistics File (.json):",
+            st.session_state.raw_data["stats_json_files"],
+            index=current_index,
+            key="stats_file_selector",
+            on_change=handle_stats_file_selection,
+            help="Choose the JSON file containing normalization statistics"
+        )
+        
+        # Show file info if selected
+        if st.session_state.raw_data["stats_file_path"]:
+            if st.session_state.raw_data["stats_file_loaded"]:
+                st.success(f"✅ **Selected:** `{st.session_state.raw_data['stats_file']}`")
+                st.success("🔍 File validation: ✅ Valid JSON format")
+            else:
+                st.error("❌ Failed to load statistics file")
+    else:
+        st.warning("⚠️ No .json files found in the selected directory.")
+
+st.markdown("---")
+
+# Data exploration section (only show if data file is selected)
+if st.session_state.raw_data["data_file_path"]:
+    st.markdown("## 🔍 Data Exploration")
+    
+    # Date selection
+    explore_nc_file(st.session_state.raw_data["data_file_path"])
+    
+    # Data groups exploration (only show if date is selected)
+    if st.session_state.raw_data["date_index"] is not None:
+        st.markdown("---")
+        explore_data_groups(st.session_state.raw_data["data_file_path"])
+
+# Statistics display section (only show if stats file is loaded)
+if st.session_state.raw_data["stats_data"]:
+    st.markdown("---")
+    st.markdown("## 📊 Statistics Analysis")
+    display_stats_overview(st.session_state.raw_data["stats_data"])
+    st.markdown("---")
+    display_stats_details(st.session_state.raw_data["stats_data"])
+
+# Sidebar controls
+st.sidebar.markdown("### 🔧 Controls")
+
+if st.sidebar.button("🔄 Reset All Selections", type="secondary"):
     reset_state_variables(page="raw_data")
-    st.sidebar.success("Selections have been reset.")
+    st.sidebar.success("✅ All selections reset!")
     st.rerun()
 
-# Display current state for debugging
-with st.sidebar.expander("Debug Info"):
+if st.sidebar.button("🔄 Refresh File Lists", type="secondary"):
+    st.session_state.raw_data["data_nc_files"] = list_nc_files_raw_data(
+        st.session_state.raw_data["data_dir_path"]
+    )
+    st.session_state.raw_data["stats_json_files"] = list_json_files(
+        st.session_state.raw_data["stats_dir_path"]
+    )
+    st.sidebar.success("✅ File lists refreshed!")
+    st.rerun()
+
+# Debug section
+with st.sidebar.expander("🔍 Debug Info"):
     debug_state()
