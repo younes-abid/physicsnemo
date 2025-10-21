@@ -3,7 +3,7 @@ import os
 import time
 import torch
 import numpy as np
-from utils.states import init_state_variables, reset_state_variables, debug_state
+from utils.states import init_state_variables, reset_state_variables, debug_state, create_selectbox_with_default
 from utils.files import list_pt_files
 from prediction import DataManager, RegressionPipeline, MetricsCalculator, Visualizer, ExperimentManager
 
@@ -17,12 +17,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize managers
-if 'experiment_manager' not in st.session_state:
+# Initialize managers with safety checks
+if 'experiment_manager' not in st.session_state or st.session_state.experiment_manager is None:
     st.session_state.experiment_manager = ExperimentManager()
-if 'metrics_calculator' not in st.session_state:
+if 'metrics_calculator' not in st.session_state or st.session_state.metrics_calculator is None:
     st.session_state.metrics_calculator = MetricsCalculator()
-if 'visualizer' not in st.session_state:
+if 'visualizer' not in st.session_state or st.session_state.visualizer is None:
     st.session_state.visualizer = Visualizer()
 
 # Sidebar for navigation and model selection
@@ -40,37 +40,6 @@ if st.sidebar.button("Reset Regression Selections"):
     st.sidebar.success("Selections have been reset.")
     st.rerun()
 
-# List and select .pt files
-pt_files = list_pt_files(base_path_regression)
-if not pt_files:
-    st.sidebar.warning("No `.mdlus` files found in the selected directory.")
-    st.session_state.regression["selected_model"] = None
-    st.session_state.regression["model_index"] = None
-else:
-    # Prepare options with None as first option
-    model_options = ["Select model..."] + pt_files
-    
-    # Get current index, default to 0 (Select...)
-    current_model_index = st.session_state.regression["model_index"]
-    if current_model_index is None:
-        current_model_index = 0
-    
-    selected_model_index = st.sidebar.selectbox(
-        "Select a regression model:",
-        range(len(model_options)),
-        format_func=lambda x: model_options[x],
-        index=current_model_index,
-        key="regression_model_selectbox"
-    )
-    
-    # Update session state
-    st.session_state.regression["model_index"] = selected_model_index
-    
-    if selected_model_index == 0:  # "Select model..." option
-        st.session_state.regression["selected_model"] = None
-    else:
-        selected_model = model_options[selected_model_index]
-        st.session_state.regression["selected_model"] = os.path.join(base_path_regression, selected_model)
 
 # Main content
 st.title("📈 Weather Regression Pipeline")
@@ -134,7 +103,30 @@ with col2:
         st.warning("Complete configuration to see experiment status")
 
 st.markdown("---")
+# List and select .pt files
+pt_files = list_pt_files(base_path_regression)
 
+# Model selection using new function
+reset_counter = st.session_state.get("reset_counter", 0)
+selected_model_file, selected_model_index, is_model_default = create_selectbox_with_default(
+    "Select a regression model:",
+    pt_files,
+    "model_selectbox_index",
+    "Select model...",
+    key=f"regression_model_selector_{reset_counter}",
+    help_text="Choose a trained regression model file (.mdlus)"
+)
+
+# Update session variables based on selection
+if is_model_default:
+    # Reset to None when default option is selected
+    st.session_state.regression["selected_model"] = None
+    st.session_state.regression["model_index"] = None
+elif selected_model_file:
+    # Update when a new model is selected
+    st.session_state.regression["selected_model"] = os.path.join(base_path_regression, selected_model_file)
+    st.session_state.regression["model_index"] = selected_model_index
+st.markdown("---")  
 # Main regression section
 if model_selected and data_selected and stats_selected and sample_selected:
     
@@ -311,86 +303,127 @@ if model_selected and data_selected and stats_selected and sample_selected:
                         st.error(f"❌ Error loading results: {str(e)}")
     
     # Display results if available
-    if hasattr(st.session_state, 'current_results'):
+    if hasattr(st.session_state, 'current_results') and st.session_state.current_results is not None:
         st.markdown("---")
         st.subheader("📊 Regression Results")
         
         results = st.session_state.current_results
         
-        # Display metrics
-        st.subheader("📈 Performance Metrics")
+        # Validate that results is a valid dictionary
+        if not isinstance(results, dict):
+            st.error("❌ Invalid results format. Please run a new prediction.")
+            st.info("💡 Try running a new prediction to generate valid results")
+            #st.stop()
         
-        col1, col2, col3, col4 = st.columns(4)
+        # Normalize metrics structure to handle both new and loaded experiments
+        def normalize_metrics(metrics):
+            """Normalize metrics structure to ensure consistent access."""
+            if not metrics:
+                return None
+                
+            # If metrics has the nested structure (from loaded experiments)
+            if 'overall' in metrics and isinstance(metrics['overall'], dict):
+                return {
+                    'overall_r2': metrics['overall'].get('r2', 0.0),
+                    'overall_rmse': metrics['overall'].get('rmse', 0.0),
+                    'overall_mae': metrics['overall'].get('mae', 0.0),
+                    'u10': metrics.get('u10', {}),
+                    'v10': metrics.get('v10', {})
+                }
+            # If metrics already has the flat structure (from new predictions)
+            else:
+                return metrics
         
-        with col1:
-            st.metric("Overall R²", f"{results['metrics']['overall_r2']:.4f}")
-        with col2:
-            st.metric("Overall RMSE", f"{results['metrics']['overall_rmse']:.4f}")
-        with col3:
-            st.metric("U10 R²", f"{results['metrics']['u10']['r2']:.4f}")
-        with col4:
-            st.metric("V10 R²", f"{results['metrics']['v10']['r2']:.4f}")
+        normalized_metrics = normalize_metrics(results.get('metrics'))
         
-        # Detailed metrics table
-        st.subheader("📋 Detailed Metrics")
-        metrics_df = st.session_state.metrics_calculator.format_metrics_for_display(results['metrics'])
-        st.dataframe(metrics_df, use_container_width=True)
-        
-        # Visualizations
-        st.subheader("📊 Visualizations")
-        
-        # Visualization options with session state
-        viz_options = ["Predictions vs Ground Truth", "Scatter Plots", "Distribution Comparison", "Complete Summary"]
-        
-        # Get current index, default to 0
-        current_viz_index = st.session_state.regression["viz_option_index"]
-        if current_viz_index is None:
-            current_viz_index = 0
-        
-        selected_viz_index = st.selectbox(
-            "Select visualization:",
-            range(len(viz_options)),
-            format_func=lambda x: viz_options[x],
-            index=current_viz_index,
-            key="regression_viz_selectbox"
-        )
-        
-        # Update session state
-        st.session_state.regression["viz_option_index"] = selected_viz_index
-        viz_option = viz_options[selected_viz_index]
-        
-        if viz_option == "Predictions vs Ground Truth":
-            fig = st.session_state.visualizer.plot_predictions_vs_truth(
-                results['u10_pred'], results['v10_pred'],
-                results['u10_true'], results['v10_true'],
-                title=f"Regression Results - {results['experiment_hash']}"
-            )
-            st.pyplot(fig)
-        
-        elif viz_option == "Scatter Plots":
-            fig = st.session_state.visualizer.plot_scatter_comparison(
-                results['u10_pred'], results['v10_pred'],
-                results['u10_true'], results['v10_true'],
-                title=f"Scatter Comparison - {results['experiment_hash']}"
-            )
-            st.pyplot(fig)
-        
-        elif viz_option == "Distribution Comparison":
-            fig = st.session_state.visualizer.plot_histograms(
-                results['u10_pred'], results['v10_pred'],
-                results['u10_true'], results['v10_true'],
-                title=f"Distribution Comparison - {results['experiment_hash']}"
-            )
-            st.pyplot(fig)
-        
-        elif viz_option == "Complete Summary":
-            fig = st.session_state.visualizer.create_summary_plot(
-                results['u10_pred'], results['v10_pred'],
-                results['u10_true'], results['v10_true'],
-                results['metrics'],
-                title=f"Complete Summary - {results['experiment_hash']}"
-            )
-            st.pyplot(fig)
+        if normalized_metrics:
+            # Display metrics
+            st.subheader("📈 Performance Metrics")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                r2_val = normalized_metrics.get('overall_r2', 0.0)
+                st.metric("Overall R²", f"{r2_val:.4f}")
+            with col2:
+                rmse_val = normalized_metrics.get('overall_rmse', 0.0)
+                st.metric("Overall RMSE", f"{rmse_val:.4f}")
+            with col3:
+                u10_r2 = normalized_metrics.get('u10', {}).get('r2', 0.0)
+                st.metric("U10 R²", f"{u10_r2:.4f}")
+            with col4:
+                v10_r2 = normalized_metrics.get('v10', {}).get('r2', 0.0)
+                st.metric("V10 R²", f"{v10_r2:.4f}")
+            
+            # Detailed metrics table
+            st.subheader("📋 Detailed Metrics")
+            try:
+                metrics_df = st.session_state.metrics_calculator.format_metrics_for_display(normalized_metrics)
+                st.dataframe(metrics_df, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error displaying detailed metrics: {str(e)}")
+                st.json(normalized_metrics)  # Fallback: show raw metrics
+            
+            # Visualizations
+            st.subheader("📊 Visualizations")
+            
+            # Check if prediction arrays are available
+            if all(key in results for key in ['u10_pred', 'v10_pred', 'u10_true', 'v10_true']):
+                # Visualization options with session state
+                viz_options = ["Predictions vs Ground Truth", "Scatter Plots", "Distribution Comparison", "Complete Summary"]
+                
+                # Use new selectbox function for visualization options
+                selected_viz, selected_viz_index, is_viz_default = create_selectbox_with_default(
+                    "Select visualization:",
+                    viz_options,
+                    "viz_option_index",
+                    "Select visualization...",
+                    key="regression_viz_selectbox"
+                )
+                
+                if not is_viz_default:
+                    st.session_state.regression["viz_option_index"] = selected_viz_index
+                    
+                    try:
+                        if selected_viz == "Predictions vs Ground Truth":
+                            fig = st.session_state.visualizer.plot_predictions_vs_truth(
+                                results['u10_pred'], results['v10_pred'],
+                                results['u10_true'], results['v10_true'],
+                                title=f"Regression Results - {results['experiment_hash']}"
+                            )
+                            st.pyplot(fig)
+                        
+                        elif selected_viz == "Scatter Plots":
+                            fig = st.session_state.visualizer.plot_scatter_comparison(
+                                results['u10_pred'], results['v10_pred'],
+                                results['u10_true'], results['v10_true'],
+                                title=f"Scatter Comparison - {results['experiment_hash']}"
+                            )
+                            st.pyplot(fig)
+                        
+                        elif selected_viz == "Distribution Comparison":
+                            fig = st.session_state.visualizer.plot_histograms(
+                                results['u10_pred'], results['v10_pred'],
+                                results['u10_true'], results['v10_true'],
+                                title=f"Distribution Comparison - {results['experiment_hash']}"
+                            )
+                            st.pyplot(fig)
+                        
+                        elif selected_viz == "Complete Summary":
+                            fig = st.session_state.visualizer.create_summary_plot(
+                                results['u10_pred'], results['v10_pred'],
+                                results['u10_true'], results['v10_true'],
+                                normalized_metrics,
+                                title=f"Complete Summary - {results['experiment_hash']}"
+                            )
+                            st.pyplot(fig)
+                    except Exception as e:
+                        st.error(f"Error creating visualization: {str(e)}")
+            else:
+                st.warning("⚠️ Prediction arrays not available for visualization")
+        else:
+            st.error("❌ No metrics available to display")
+            st.info("💡 Try running a new prediction or check if the loaded experiment has valid metrics")
 
 else:
     st.warning("⚠️ Please complete the configuration:")
@@ -413,35 +446,24 @@ if not experiments_df.empty:
     
     # Option to delete experiments
     if st.checkbox("Enable experiment management"):
-        # Get current index, default to 0
-        current_delete_index = st.session_state.regression["delete_experiment_index"]
-        if current_delete_index is None:
-            current_delete_index = 0
-        
-        # Prepare options with None as first option
-        delete_options = ["Select experiment to delete..."] + experiments_df['Hash'].tolist()
-        
-        selected_delete_index = st.selectbox(
+        # Use new selectbox function for experiment deletion
+        selected_experiment, selected_exp_index, is_exp_default = create_selectbox_with_default(
             "Select experiment to delete:",
-            range(len(delete_options)),
-            format_func=lambda x: delete_options[x],
-            index=current_delete_index,
+            experiments_df['Hash'].tolist(),
+            "delete_experiment_index",
+            "Select experiment to delete...",
             key="regression_delete_experiment_selectbox"
         )
         
-        # Update session state
-        st.session_state.regression["delete_experiment_index"] = selected_delete_index
-        
-        if selected_delete_index > 0:  # Not "Select experiment..." option
-            selected_hash = delete_options[selected_delete_index]
+        if not is_exp_default and selected_experiment:
             if st.button("🗑️ Delete Selected Experiment"):
-                if st.session_state.experiment_manager.delete_experiment(selected_hash):
-                    st.success(f"✅ Experiment {selected_hash} deleted successfully!")
+                if st.session_state.experiment_manager.delete_experiment(selected_experiment):
+                    st.success(f"✅ Experiment {selected_experiment} deleted successfully!")
                     # Reset the selectbox index after deletion
                     st.session_state.regression["delete_experiment_index"] = 0
                     st.rerun()
                 else:
-                    st.error(f"❌ Failed to delete experiment {selected_hash}")
+                    st.error(f"❌ Failed to delete experiment {selected_experiment}")
 else:
     st.info("No experiments found. Run a prediction to create your first experiment!")
 

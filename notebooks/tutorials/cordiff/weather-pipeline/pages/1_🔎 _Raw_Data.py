@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 
-from utils.states import init_state_variables, reset_state_variables, debug_state
+from utils.states import init_state_variables, reset_state_variables, debug_state, create_selectbox_with_default
 from utils.files import list_nc_files_raw_data, list_json_files, load_stats_file, validate_nc_file
 
 # Initialize session state variables
@@ -146,33 +146,71 @@ def handle_stats_dir_change():
 
 def handle_data_file_selection():
     """Handle data file selection changes."""
-    if st.session_state.data_file_selector != st.session_state.raw_data["data_file"]:
-        st.session_state.raw_data["data_file"] = st.session_state.data_file_selector
+    # Use dynamic key that changes with reset counter
+    reset_counter = st.session_state.get("reset_counter", 0)
+    
+    selected_file, selected_index, is_default = create_selectbox_with_default(
+        "📄 Select Data File (.nc):",
+        st.session_state.raw_data["data_nc_files"],
+        "data_file_selectbox_index",
+        "Select data file...",
+        key=f"data_file_selector_{reset_counter}",
+        help_text="Choose the NetCDF file containing your weather data"
+    )
+    
+    # Update session variables based on selection
+    if is_default:
+        # Reset to None when default option is selected
+        st.session_state.raw_data["data_file"] = None
+        st.session_state.raw_data["data_file_path"] = None
+        st.session_state.raw_data["date"] = None
+        st.session_state.raw_data["date_index"] = None
+        st.session_state.raw_data["data_file_loaded"] = False
+        # Reset date selectbox index to force showing "Select date..." message
+        if "date_selectbox_index" in st.session_state:
+            del st.session_state["date_selectbox_index"]
+    elif selected_file != st.session_state.raw_data["data_file"]:
+        # Update when a new file is selected
+        st.session_state.raw_data["data_file"] = selected_file
         st.session_state.raw_data["data_file_path"] = os.path.join(
             st.session_state.raw_data["data_dir_path"], 
-            st.session_state.raw_data["data_file"]
+            selected_file
         )
         st.session_state.raw_data["date"] = None
         st.session_state.raw_data["date_index"] = None
         st.session_state.raw_data["data_file_loaded"] = True
+        # Reset date selectbox index to force showing "Select date..." message
+        if "date_selectbox_index" in st.session_state:
+            del st.session_state["date_selectbox_index"]
 
 def handle_stats_file_selection():
     """Handle stats file selection changes."""
-    selected_stats_file = st.session_state.get("stats_file_selector")
+    # Use dynamic key that changes with reset counter
+    reset_counter = st.session_state.get("reset_counter", 0)
     
-    # Debug: Log the selection
-    print(f"DEBUG: Selected stats file: {selected_stats_file}")
-    print(f"DEBUG: Current stats file in session: {st.session_state.raw_data['stats_file']}")
+    selected_file, selected_index, is_default = create_selectbox_with_default(
+        "📄 Select Statistics File (.json):",
+        st.session_state.raw_data["stats_json_files"],
+        "stats_file_selectbox_index",
+        "Select statistics file...",
+        key=f"stats_file_selector_{reset_counter}",
+        help_text="Choose the JSON file containing normalization statistics"
+    )
     
-    if selected_stats_file and selected_stats_file != st.session_state.raw_data["stats_file"]:
-        # Update session state
-        st.session_state.raw_data["stats_file"] = selected_stats_file
+    # Update session variables based on selection
+    if is_default:
+        # Reset to None when default option is selected
+        st.session_state.raw_data["stats_file"] = None
+        st.session_state.raw_data["stats_file_path"] = None
+        st.session_state.raw_data["stats_data"] = None
+        st.session_state.raw_data["stats_file_loaded"] = False
+    elif selected_file != st.session_state.raw_data["stats_file"]:
+        # Update when a new file is selected
+        st.session_state.raw_data["stats_file"] = selected_file
         st.session_state.raw_data["stats_file_path"] = os.path.join(
             st.session_state.raw_data["stats_dir_path"], 
-            selected_stats_file
+            selected_file
         )
-        
-        print(f"DEBUG: Updated stats_file_path to: {st.session_state.raw_data['stats_file_path']}")
         
         # Load the stats file immediately
         if st.session_state.raw_data["stats_file_path"]:
@@ -181,11 +219,9 @@ def handle_stats_file_selection():
                 st.error(f"Error loading stats file: {error}")
                 st.session_state.raw_data["stats_data"] = None
                 st.session_state.raw_data["stats_file_loaded"] = False
-                print(f"DEBUG: Error loading stats file: {error}")
             else:
                 st.session_state.raw_data["stats_data"] = stats_data
                 st.session_state.raw_data["stats_file_loaded"] = True
-                print(f"DEBUG: Successfully loaded stats file")
                 
         # Force a rerun to update the UI
         st.rerun()
@@ -212,33 +248,29 @@ def explore_nc_file(file_path):
                 # Date selection with improved UI
                 st.markdown("#### Select Date for Analysis")
                 
-                # Prepare options with None as first option
-                date_options = ["Select date..."] + [d.strftime("%Y-%m-%d %H:%M:%S") for d in dates]
+                # Use the new selectbox function
+                date_strings = [d.strftime("%Y-%m-%d %H:%M:%S") for d in dates]
+                reset_counter = st.session_state.get("reset_counter", 0)
                 
-                # Get current index, default to 0 (Select...)
-                current_date_index = st.session_state.raw_data["date_selectbox_index"]
-                if current_date_index is None:
-                    current_date_index = 0
-                
-                selected_date_index = st.selectbox(
-                    "Choose a date for regression, diffusion and visualization:",
-                    range(len(date_options)),
-                    format_func=lambda x: date_options[x],
-                    index=current_date_index,
-                    key="date_selector_raw_data"
+                selected_date_str, selected_date_index, is_default = create_selectbox_with_default(
+                    "Select a Date:",
+                    date_strings,
+                    "date_selectbox_index",
+                    "Select date...",
+                    key=f"date_selector_raw_data_{reset_counter}",
+                    help_text="Choose a date for regression, diffusion and visualization"
                 )
                 
-                # Update session state
-                st.session_state.raw_data["date_selectbox_index"] = selected_date_index
-                
-                if selected_date_index == 0:  # "Select date..." option
+                # Update session variables based on selection
+                if is_default:
                     st.session_state.raw_data["date"] = None
                     st.session_state.raw_data["date_index"] = None
+                    # Show warning when no date is selected
+                    st.warning("⚠️ select a date from available dates.")
                 else:
-                    actual_index = selected_date_index - 1  # Adjust for "Select..." option
-                    selected_date = dates[actual_index]
+                    selected_date = dates[selected_date_index]
                     st.session_state.raw_data["date"] = selected_date
-                    st.session_state.raw_data["date_index"] = actual_index
+                    st.session_state.raw_data["date_index"] = selected_date_index
                     
                     # Display selected date info nicely
                     st.success(f"✅ **Selected Date:** {selected_date.strftime('%Y-%m-%d %H:%M:%S')} (Index: {st.session_state.raw_data['date_index']})")
@@ -275,36 +307,23 @@ def explore_data_groups(file_path):
                             shape = sample_var.shape
                             st.metric("📏 Data Shape", f"{shape}")
 
-                    # Variable selection and preview
-                    # Prepare options with None as first option
-                    var_options = ["Select variable..."] + variable_options
-                    
-                    # Get current index for this group, default to 0 (Select...)
-                    var_index_key = f"{group.lower()}_var_index"
-                    if var_index_key not in st.session_state.raw_data:
-                        st.session_state.raw_data[var_index_key] = 0
-                    
-                    current_var_index = st.session_state.raw_data[var_index_key]
-                    if current_var_index is None:
-                        current_var_index = 0
-                    
-                    selected_var_index = st.selectbox(
-                        f"Select variable to preview:",
-                        range(len(var_options)),
-                        format_func=lambda x: var_options[x],
-                        index=current_var_index,
-                        key=f"var_selector_{group}"
+                    # Variable selection and preview using new function
+                    reset_counter = st.session_state.get("reset_counter", 0)
+                    selected_var, selected_var_index, is_var_default = create_selectbox_with_default(
+                        "Select variable to preview:",
+                        variable_options,
+                        f"{group.lower()}_var_index",
+                        "Select variable...",
+                        key=f"var_selector_{group}_{reset_counter}"
                     )
                     
-                    # Update session state
-                    st.session_state.raw_data[var_index_key] = selected_var_index
-                    
-                    if selected_var_index == 0:  # "Select variable..." option
-                        selected_var = None
+                    # Update session variable
+                    if is_var_default:
+                        st.session_state.raw_data[f"{group.lower()}_var_index"] = 0
                     else:
-                        selected_var = var_options[selected_var_index]
+                        st.session_state.raw_data[f"{group.lower()}_var_index"] = selected_var_index
 
-                    if selected_var:
+                    if not is_var_default and selected_var:
                         # Extract data for selected date
                         var_data = group_data[selected_var].isel(sample=st.session_state.raw_data["date_index"])
 
@@ -373,33 +392,6 @@ def explore_data_groups(file_path):
 st.title("🔎 Raw Data Configuration")
 st.markdown("Configure your data files, statistics, and select analysis parameters.")
 
-# Progress indicator
-data_ready = bool(st.session_state.raw_data["data_file_path"])
-stats_ready = bool(st.session_state.raw_data["stats_file_path"])
-date_ready = bool(st.session_state.raw_data["date"])
-
-progress = sum([data_ready, stats_ready, date_ready])
-st.progress(progress / 3)
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    if data_ready:
-        st.success("✅ Data File")
-    else:
-        st.error("❌ Data File")
-with col2:
-    if stats_ready:
-        st.success("✅ Stats File")
-    else:
-        st.error("❌ Stats File")
-with col3:
-    if date_ready:
-        st.success("✅ Date Selected")
-    else:
-        st.error("❌ Date Selected")
-
-st.markdown("---")
-
 # Main content in two columns
 col1, col2 = st.columns([1, 1])
 
@@ -422,27 +414,20 @@ with col1:
         )
     
     # Data file selection
-    if st.session_state.raw_data["data_nc_files"]:
-        st.selectbox(
-            "📄 Select Data File (.nc):",
-            st.session_state.raw_data["data_nc_files"],
-            key="data_file_selector",
-            on_change=handle_data_file_selection,
-            help="Choose the NetCDF file containing your weather data"
-        )
+    handle_data_file_selection()
+    
+    # Show file info if selected
+    if st.session_state.raw_data["data_file_path"]:
+        st.success(f"✅ **Selected:** `{st.session_state.raw_data['data_file']}`")
         
-        # Show file info if selected
-        if st.session_state.raw_data["data_file_path"]:
-            st.success(f"✅ **Selected:** `{st.session_state.raw_data['data_file']}`")
-            
-            # File validation
-            is_valid, error = validate_nc_file(st.session_state.raw_data["data_file_path"])
-            if is_valid:
-                st.success("🔍 File validation: ✅ Valid NetCDF structure")
-            else:
-                st.error(f"🔍 File validation: ❌ {error}")
+        # File validation
+        is_valid, error = validate_nc_file(st.session_state.raw_data["data_file_path"])
+        if is_valid:
+            st.success("🔍 File validation: ✅ Valid NetCDF structure")
+        else:
+            st.error(f"🔍 File validation: ❌ {error}")
     else:
-        st.warning("⚠️ No .nc files found in the selected directory.")
+        st.warning("⚠️ select .nc file from selected directory.")
 
 with col2:
     st.markdown("### 📊 Statistics File Configuration")
@@ -463,53 +448,17 @@ with col2:
         )
     
     # Stats file selection
-    if st.session_state.raw_data["stats_json_files"]:
-        # Calculate the proper index for the selectbox
-        current_stats_file = st.session_state.raw_data["stats_file"]
-        try:
-            current_index = st.session_state.raw_data["stats_json_files"].index(current_stats_file) if current_stats_file in st.session_state.raw_data["stats_json_files"] else None
-        except (ValueError, TypeError):
-            current_index = None
-            
-        # If there's only one file and it's not loaded yet, load it automatically
-        if (len(st.session_state.raw_data["stats_json_files"]) == 1 and 
-            not st.session_state.raw_data["stats_file_loaded"]):
-            
-            stats_file = st.session_state.raw_data["stats_json_files"][0]
-            st.session_state.raw_data["stats_file"] = stats_file
-            st.session_state.raw_data["stats_file_path"] = os.path.join(
-                st.session_state.raw_data["stats_dir_path"], 
-                stats_file
-            )
-            
-            # Load the stats file immediately
-            stats_data, error = load_stats_file(st.session_state.raw_data["stats_file_path"])
-            if error:
-                st.error(f"Error loading stats file: {error}")
-                st.session_state.raw_data["stats_data"] = None
-                st.session_state.raw_data["stats_file_loaded"] = False
-            else:
-                st.session_state.raw_data["stats_data"] = stats_data
-                st.session_state.raw_data["stats_file_loaded"] = True
-            
-        v = st.selectbox(
-            "📄 Select Statistics File (.json):",
-            st.session_state.raw_data["stats_json_files"],
-            index=current_index,
-            key="stats_file_selector",
-            on_change=handle_stats_file_selection,
-            help="Choose the JSON file containing normalization statistics"
-        )
-        
-        # Show file info if selected
-        if st.session_state.raw_data["stats_file_path"]:
-            if st.session_state.raw_data["stats_file_loaded"]:
-                st.success(f"✅ **Selected:** `{st.session_state.raw_data['stats_file']}`")
-                st.success("🔍 File validation: ✅ Valid JSON format")
-            else:
-                st.error("❌ Failed to load statistics file")
+    handle_stats_file_selection()
+    
+    # Show file info if selected
+    if st.session_state.raw_data["stats_file_path"]:
+        if st.session_state.raw_data["stats_file_loaded"]:
+            st.success(f"✅ **Selected:** `{st.session_state.raw_data['stats_file']}`")
+            st.success("🔍 File validation: ✅ Valid JSON format")
+        else:
+            st.error("❌ Failed to load statistics file")
     else:
-        st.warning("⚠️ No .json files found in the selected directory.")
+        st.warning("⚠️ select .json file from selected directory.")
 
 st.markdown("---")
 
