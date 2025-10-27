@@ -120,7 +120,6 @@ def display_variable_stats(variables_dict, var_type):
         hide_index=True
     )
     
-
 def handle_data_dir_change():
     """Handle data directory path changes."""
     new_data_dir = st.session_state.data_dir_input
@@ -152,6 +151,7 @@ def handle_data_file_selection():
     selected_file, selected_index, is_default = create_selectbox_with_default(
         "📄 Select Data File (.nc):",
         st.session_state.raw_data["data_nc_files"],
+        st.session_state.raw_data,
         "data_file_selectbox_index",
         "Select data file...",
         key=f"data_file_selector_{reset_counter}",
@@ -167,8 +167,7 @@ def handle_data_file_selection():
         st.session_state.raw_data["date_index"] = None
         st.session_state.raw_data["data_file_loaded"] = False
         # Reset date selectbox index to force showing "Select date..." message
-        if "date_selectbox_index" in st.session_state:
-            del st.session_state["date_selectbox_index"]
+        st.session_state.raw_data["date_selectbox_index"] = 0
     elif selected_file != st.session_state.raw_data["data_file"]:
         # Update when a new file is selected
         st.session_state.raw_data["data_file"] = selected_file
@@ -180,8 +179,7 @@ def handle_data_file_selection():
         st.session_state.raw_data["date_index"] = None
         st.session_state.raw_data["data_file_loaded"] = True
         # Reset date selectbox index to force showing "Select date..." message
-        if "date_selectbox_index" in st.session_state:
-            del st.session_state["date_selectbox_index"]
+        st.session_state.raw_data["date_selectbox_index"] = 0
 
 def handle_stats_file_selection():
     """Handle stats file selection changes."""
@@ -191,6 +189,7 @@ def handle_stats_file_selection():
     selected_file, selected_index, is_default = create_selectbox_with_default(
         "📄 Select Statistics File (.json):",
         st.session_state.raw_data["stats_json_files"],
+        st.session_state.raw_data,
         "stats_file_selectbox_index",
         "Select statistics file...",
         key=f"stats_file_selector_{reset_counter}",
@@ -253,12 +252,12 @@ def explore_nc_file(file_path):
                 reset_counter = st.session_state.get("reset_counter", 0)
                 
                 selected_date_str, selected_date_index, is_default = create_selectbox_with_default(
-                    "Select a Date:",
+                    "Choose a date for regression, diffusion and visualization:",
                     date_strings,
+                    st.session_state.raw_data,
                     "date_selectbox_index",
                     "Select date...",
-                    key=f"date_selector_raw_data_{reset_counter}",
-                    help_text="Choose a date for regression, diffusion and visualization"
+                    key=f"date_selector_raw_data_{reset_counter}"
                 )
                 
                 # Update session variables based on selection
@@ -312,7 +311,8 @@ def explore_data_groups(file_path):
                     selected_var, selected_var_index, is_var_default = create_selectbox_with_default(
                         "Select variable to preview:",
                         variable_options,
-                        f"{group.lower()}_var_index",
+                        st.session_state.raw_data,
+                        f"{group.lower()}_var_selectbox_index",
                         "Select variable...",
                         key=f"var_selector_{group}_{reset_counter}"
                     )
@@ -391,6 +391,8 @@ def explore_data_groups(file_path):
 # Main UI
 st.title("🔎 Raw Data Configuration")
 st.markdown("Configure your data files, statistics, and select analysis parameters.")
+
+st.markdown("---")
 
 # Main content in two columns
 col1, col2 = st.columns([1, 1])

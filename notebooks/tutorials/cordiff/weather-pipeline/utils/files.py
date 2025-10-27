@@ -28,7 +28,7 @@ def list_pt_files(base_path):
     if not os.path.exists(base_path):
         return []
     try:
-        return [f for f in os.listdir(base_path) if f.endswith((".pt", ".mdlus"))]
+        return sorted([f for f in os.listdir(base_path) if f.endswith((".pt"))])
     except Exception:
         return []
 

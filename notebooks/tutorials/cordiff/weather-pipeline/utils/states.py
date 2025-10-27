@@ -1,166 +1,155 @@
 import streamlit as st
 import os
+from prediction import ExperimentManager, MetricsCalculator, Visualizer
+
+def reset_raw_data_variables():
+    """Factory function to create fresh raw data state variables."""
+    return {
+        # Data file configuration
+        "data_dir_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated_432",
+        "data_file": None,
+        "data_file_path": None,
+        "data_nc_files": [],
+        "data_file_loaded": False,
+        
+        # Statistics file configuration
+        "stats_dir_path": "/app/data/custom_data_2/stats_432",
+        "stats_file": None,
+        "stats_file_path": None,
+        "stats_json_files": [],
+        "stats_data": None,
+        "stats_file_loaded": False,
+        
+        # Date/time selection
+        "date": None,
+        "date_index": None,
+        
+        # Variable selection for data exploration
+        "input_var_index": 0,
+        "output_var_index": 0,
+        
+        # Selectbox indices for UI state management
+        "data_file_selectbox_index": 0,
+        "stats_file_selectbox_index": 0,
+        "date_selectbox_index": 0,
+        "input_var_selectbox_index": 0,
+        "output_var_selectbox_index": 0,
+    }
+
+def reset_regression_variables():
+    """Factory function to create fresh regression state variables."""
+    return {
+        # Model configuration
+        "model_dir_path": "/app/checkpoints_regression/",
+        "model_files": [],
+        "selected_model": None,
+        "selected_model_file": None,
+        "model_index": None,
+        
+        # Regression model management
+        "model_loaded": False,
+        "model_info": None,
+        "model_validation_status": None,
+        
+        # Experiment execution
+        "experiment_running": False,
+        "experiment_completed": False,
+        "current_results": None,
+        
+        # Experiment management - Always create new instances
+        "experiment_manager": ExperimentManager(),
+        "metrics_calculator": MetricsCalculator(),
+        "visualizer": Visualizer(),
+        "regression_pipeline": None,
+        
+        # UI state
+        "done": False,
+        "show_results": False,
+        "results_auto_loaded": False,
+        "selected_history_experiment": None,
+        "history_view_mode": "individual",  # "individual" or "aggregate"
+        
+        # Selectbox indices for UI state management
+        "model_selectbox_index": 0,
+        "viz_option_selectbox_index": 0,
+        "delete_experiment_selectbox_index": 0,
+        "history_experiment_selectbox_index": 0,
+    }
+
+def reset_diffusion_variables():
+    """Factory function to create fresh diffusion state variables."""
+    return {
+        # Model configuration
+        "model_dir_path": "/app/checkpoints_diffusion/",
+        "model_files": [],
+        "selected_model": None,
+        "selected_model_file": None,
+        "model_index": None,
+        
+        # Experiment management - Always create new instances
+        "experiment_manager": ExperimentManager(),
+        "metrics_calculator": MetricsCalculator(),
+        "visualizer": Visualizer(),
+        "diffusion_pipeline": None,
+        "model_loaded": False,
+        "current_results": None,
+        
+        # Configuration
+        "done": False,
+        "noise_level": 0.1,
+        "num_steps": 50,
+        
+        # Selectbox indices for UI state management
+        "model_selectbox_index": 0,
+        "viz_option_selectbox_index": 0,
+        "delete_experiment_selectbox_index": 0,
+    }
+
+def reset_statistics_variables():
+    """Factory function to create fresh statistics state variables."""
+    return {
+        "selected_experiment": None,
+        "comparison_experiments": [],
+        "chart_type": "line",
+        "metric_type": "r2",
+    }
 
 def init_state_variables():
+    """Initialize all session state variables using factory functions."""
     # Raw Data state variables
     if "raw_data" not in st.session_state:
-        st.session_state.raw_data = {
-            # Data file configuration
-            "data_dir_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated_432",
-            "data_file": None,
-            "data_file_path": None,
-            "data_nc_files": [],
-            "data_file_loaded": False,
-            
-            # Statistics file configuration
-            "stats_dir_path": "/app/data/custom_data_2/stats_432",
-            "stats_file": None,
-            "stats_file_path": None,
-            "stats_json_files": [],
-            "stats_data": None,
-            "stats_file_loaded": False,
-            
-            # Date/time selection
-            "date": None,
-            "date_index": None,
-            "date_selectbox_index": None,
-            
-            # Variable selection for data exploration
-            "input_var_index": 0,
-            "output_var_index": 0,
-        }
+        st.session_state.raw_data = reset_raw_data_variables()
 
     # Regression state variables
     if "regression" not in st.session_state:
-        st.session_state.regression = {
-            "selected_model": None,
-            "model_index": None,
-            "done": False,
-            "viz_option_index": 0,
-            "delete_experiment_index": 0,
-        }
+        st.session_state.regression = reset_regression_variables()
     
-    # Diffusion state variables (placeholder for future implementation)
+    # Diffusion state variables
     if "diffusion" not in st.session_state:
-        st.session_state.diffusion = {
-            "selected_model": None,
-            "model_index": None,
-            "done": False,
-            "noise_level": 0.1,
-            "num_steps": 50,
-        }
+        st.session_state.diffusion = reset_diffusion_variables()
     
     # Statistics/Visualization state variables
     if "statistics" not in st.session_state:
-        st.session_state.statistics = {
-            "selected_experiment": None,
-            "comparison_experiments": [],
-            "chart_type": "line",
-            "metric_type": "r2",
-        }
-    
-    # Global experiment management
-    if "experiment_manager" not in st.session_state:
-        st.session_state.experiment_manager = None
-    if "metrics_calculator" not in st.session_state:
-        st.session_state.metrics_calculator = None
-    if "visualizer" not in st.session_state:
-        st.session_state.visualizer = None
-    if "regression_pipeline" not in st.session_state:
-        st.session_state.regression_pipeline = None
-    if "model_loaded" not in st.session_state:
-        st.session_state.model_loaded = False
-    if "current_results" not in st.session_state:
-        st.session_state.current_results = None
+        st.session_state.statistics = reset_statistics_variables()
 
 def reset_state_variables(page="all"):
+    """Reset state variables using factory functions."""
     # Add a reset counter to force widget recreation
     if "reset_counter" not in st.session_state:
         st.session_state.reset_counter = 0
     st.session_state.reset_counter += 1
     
     if page in ["all", "raw_data"]:
-        st.session_state.raw_data = {
-            # Data file configuration
-            "data_dir_path": "/app/data/custom_data_2/ERA5_WRF_combined_concatenated_432",
-            "data_file": None,
-            "data_file_path": None,
-            "data_nc_files": [],
-            "data_file_loaded": False,
-            
-            # Statistics file configuration
-            "stats_dir_path": "/app/data/custom_data_2/stats_432",
-            "stats_file": None,
-            "stats_file_path": None,
-            "stats_json_files": [],
-            "stats_data": None,
-            "stats_file_loaded": False,
-            
-            # Date/time selection
-            "date": None,
-            "date_index": None,
-            "date_selectbox_index": None,
-            
-            # Variable selection for data exploration
-            "input_var_index": 0,
-            "output_var_index": 0,
-        }
-        
-        # Reset selectbox indices used by create_selectbox_with_default
-        keys_to_delete = ["data_file_selectbox_index", "stats_file_selectbox_index", "date_selectbox_index"]
-        for key in keys_to_delete:
-            if key in st.session_state:
-                del st.session_state[key]
+        st.session_state.raw_data = reset_raw_data_variables()
     
     if page in ["all", "regression"]:
-        st.session_state.regression = {
-            "selected_model": None,
-            "model_index": None,
-            "done": False,
-            "viz_option_index": 0,
-            "delete_experiment_index": 0,
-        }
-        # Reset regression-related objects but don't set managers to None
-        if "regression_pipeline" in st.session_state:
-            st.session_state.regression_pipeline = None
-        if "model_loaded" in st.session_state:
-            st.session_state.model_loaded = False
-        if "current_results" in st.session_state:
-            st.session_state.current_results = None
-            
-        # Reset selectbox indices used by create_selectbox_with_default
-        keys_to_delete = ["model_selectbox_index", "viz_option_index", "delete_experiment_index"]
-        for key in keys_to_delete:
-            if key in st.session_state:
-                del st.session_state[key]
+        st.session_state.regression = reset_regression_variables()
     
     if page in ["all", "diffusion"]:
-        st.session_state.diffusion = {
-            "selected_model": None,
-            "model_index": None,
-            "done": False,
-            "noise_level": 0.1,
-            "num_steps": 50,
-        }
+        st.session_state.diffusion = reset_diffusion_variables()
     
     if page in ["all", "statistics"]:
-        st.session_state.statistics = {
-            "selected_experiment": None,
-            "comparison_experiments": [],
-            "chart_type": "line",
-            "metric_type": "r2",
-        }
-    
-    # Ensure managers are always initialized (don't reset to None)
-    if "experiment_manager" not in st.session_state or st.session_state.experiment_manager is None:
-        from prediction import ExperimentManager
-        st.session_state.experiment_manager = ExperimentManager()
-    if "metrics_calculator" not in st.session_state or st.session_state.metrics_calculator is None:
-        from prediction import MetricsCalculator
-        st.session_state.metrics_calculator = MetricsCalculator()
-    if "visualizer" not in st.session_state or st.session_state.visualizer is None:
-        from prediction import Visualizer
-        st.session_state.visualizer = Visualizer()
+        st.session_state.statistics = reset_statistics_variables()
 
 def debug_state():
     """Display pipeline progress with colored Streamlit messages and progress tracking."""
@@ -316,7 +305,8 @@ def debug_state():
 def create_selectbox_with_default(
     label: str,
     options: list,
-    session_key: str,
+    session_index_ref: dict,
+    session_index_key: str,
     default_message: str = "Select option...",
     key: str = None,
     on_change=None,
@@ -329,7 +319,8 @@ def create_selectbox_with_default(
     Args:
         label: The label for the selectbox
         options: List of actual options (can be empty)
-        session_key: Key to store the selected index in session state
+        session_index_ref: Reference to the session state dict (e.g., st.session_state.raw_data)
+        session_index_key: Key within the session dict for the index (e.g., "data_file_selectbox_index")
         default_message: Message to show as first option (default: "Select option...")
         key: Streamlit widget key
         on_change: Callback function for when selection changes
@@ -359,8 +350,8 @@ def create_selectbox_with_default(
         # Single option case - show selectbox but don't auto-select unless previously selected
         display_options = [default_message] + options
         
-        # Get current index, default to 0 (Select...) instead of 1 (auto-select)
-        current_index = st.session_state.get(session_key, 0)
+        # Get current index from session state reference, default to 0 (Select...)
+        current_index = session_index_ref.get(session_index_key, 0)
         if current_index is None or current_index >= len(display_options):
             current_index = 0
         
@@ -375,8 +366,8 @@ def create_selectbox_with_default(
             disabled=disabled
         )
         
-        # Update session state
-        st.session_state[session_key] = selected_index
+        # Update session state reference
+        session_index_ref[session_index_key] = selected_index
         
         if selected_index == 0:
             return None, None, True
@@ -386,8 +377,8 @@ def create_selectbox_with_default(
     # Multiple options case
     display_options = [default_message] + options
     
-    # Get current index, default to 0 (Select...)
-    current_index = st.session_state.get(session_key, 0)
+    # Get current index from session state reference, default to 0 (Select...)
+    current_index = session_index_ref.get(session_index_key, 0)
     if current_index is None or current_index >= len(display_options):
         current_index = 0
     
@@ -402,8 +393,8 @@ def create_selectbox_with_default(
         disabled=disabled
     )
     
-    # Update session state
-    st.session_state[session_key] = selected_index
+    # Update session state reference
+    session_index_ref[session_index_key] = selected_index
     
     if selected_index == 0:  # Default option selected
         return None, None, True
