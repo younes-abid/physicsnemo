@@ -4,8 +4,9 @@ import time
 import torch
 import numpy as np
 from utils.states import init_state_variables, reset_state_variables, debug_state, create_selectbox_with_default
-from utils.files import list_pt_files
+from utils.files import list_mdlus_files
 from prediction import DataManager, RegressionPipeline, MetricsCalculator, Visualizer, ExperimentManager
+import matplotlib.pyplot as plt
 
 # Initialize session state variables
 init_state_variables()
@@ -22,7 +23,7 @@ def handle_model_dir_change():
     new_model_dir = st.session_state.model_dir_input
     if new_model_dir != st.session_state.regression["model_dir_path"]:
         st.session_state.regression["model_dir_path"] = new_model_dir
-        st.session_state.regression["model_files"] = list_pt_files(new_model_dir)
+        st.session_state.regression["model_files"] = list_mdlus_files(new_model_dir)
         reset_regression_from_model_selection()
 
 def handle_model_file_selection():
@@ -30,7 +31,7 @@ def handle_model_file_selection():
     reset_counter = st.session_state.get("reset_counter", 0)
     
     selected_file, selected_index, is_default = create_selectbox_with_default(
-        "📄 Select Regression Model (.pt):",
+        "📄 Select Regression Model (.mdlus):",
         st.session_state.regression["model_files"],
         st.session_state.regression,
         "model_selectbox_index",
@@ -454,7 +455,6 @@ def display_experiments_history():
                 
                 # Aggregate plots
                 if r2_values and rmse_values:
-                    import matplotlib.pyplot as plt
                     
                     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 8))
                     
@@ -572,7 +572,7 @@ with col1:
     
     # Update file list if needed
     if not st.session_state.regression["model_files"]:
-        st.session_state.regression["model_files"] = list_pt_files(st.session_state.regression["model_dir_path"])
+        st.session_state.regression["model_files"] = list_mdlus_files(st.session_state.regression["model_dir_path"])
     
     # Model file selection
     handle_model_file_selection()
@@ -801,7 +801,7 @@ if st.sidebar.button("🔄 Reset All Selections", type="secondary"):
     st.rerun()
 
 if st.sidebar.button("🔄 Refresh File Lists", type="secondary"):
-    st.session_state.regression["model_files"] = list_pt_files(st.session_state.regression["model_dir_path"])
+    st.session_state.regression["model_files"] = list_mdlus_files(st.session_state.regression["model_dir_path"])
     st.sidebar.success("✅ File lists refreshed!")
     st.rerun()
 

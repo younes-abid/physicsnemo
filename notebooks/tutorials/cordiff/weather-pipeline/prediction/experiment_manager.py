@@ -17,20 +17,20 @@ import pandas as pd
 class ExperimentManager:
     """Manages regression experiment tracking and persistence."""
     
-    def __init__(self, base_output_dir: str = "/app/outputs/weather-pipeline"):
+    def __init__(self, experiments_dir: str = "/app/outputs/weather-pipeline"):
         """
         Initialize ExperimentManager.
         
         Args:
-            base_output_dir: Base directory for saving experiments
+            experiments_dir: Directory for saving experiments
         """
-        self.base_output_dir = base_output_dir
-        self.predictions_dir = os.path.join(base_output_dir, "predictions", "regression")
+        
+        self.experiments_dir = experiments_dir
         self.ensure_directories()
     
     def ensure_directories(self):
         """Create necessary directories if they don't exist."""
-        os.makedirs(self.predictions_dir, exist_ok=True)
+        os.makedirs(self.experiments_dir, exist_ok=True)
     
     def generate_experiment_hash(self, model_path: str, data_path: str, sample_idx: int = None) -> str:
         """
@@ -62,7 +62,7 @@ class ExperimentManager:
         Returns:
             True if experiment exists, False otherwise
         """
-        experiment_dir = os.path.join(self.predictions_dir, experiment_hash)
+        experiment_dir = os.path.join(self.experiments_dir, experiment_hash)
         return os.path.exists(experiment_dir)
     
     def get_experiment_info(self, experiment_hash: str) -> Optional[Dict[str, Any]]:
@@ -75,7 +75,7 @@ class ExperimentManager:
         Returns:
             Dictionary containing experiment metadata or None if not found
         """
-        experiment_dir = os.path.join(self.predictions_dir, experiment_hash)
+        experiment_dir = os.path.join(self.experiments_dir, experiment_hash)
         metadata_file = os.path.join(experiment_dir, "metadata.yaml")
         
         if not os.path.exists(metadata_file):
@@ -119,7 +119,7 @@ class ExperimentManager:
         """
         
         # Create experiment directory
-        experiment_dir = os.path.join(self.predictions_dir, experiment_hash)
+        experiment_dir = os.path.join(self.experiments_dir, experiment_hash)
         os.makedirs(experiment_dir, exist_ok=True)
         
         # Save predictions as pickle files
@@ -193,7 +193,7 @@ class ExperimentManager:
         Returns:
             Tuple of (predictions_dict, metadata_dict) or None if not found
         """
-        experiment_dir = os.path.join(self.predictions_dir, experiment_hash)
+        experiment_dir = os.path.join(self.experiments_dir, experiment_hash)
         
         if not os.path.exists(experiment_dir):
             return None
@@ -225,11 +225,11 @@ class ExperimentManager:
         """
         experiments = []
         
-        if not os.path.exists(self.predictions_dir):
+        if not os.path.exists(self.experiments_dir):
             return experiments
         
-        for experiment_hash in os.listdir(self.predictions_dir):
-            experiment_path = os.path.join(self.predictions_dir, experiment_hash)
+        for experiment_hash in os.listdir(self.experiments_dir):
+            experiment_path = os.path.join(self.experiments_dir, experiment_hash)
             
             if not os.path.isdir(experiment_path):
                 continue
@@ -280,7 +280,7 @@ class ExperimentManager:
         Returns:
             True if successfully deleted, False otherwise
         """
-        experiment_dir = os.path.join(self.predictions_dir, experiment_hash)
+        experiment_dir = os.path.join(self.experiments_dir, experiment_hash)
         
         if not os.path.exists(experiment_dir):
             return False

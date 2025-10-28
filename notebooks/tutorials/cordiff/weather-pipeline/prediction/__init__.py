@@ -3,13 +3,15 @@
 
 from .data_manager import DataManager
 from .regression_pipeline import RegressionPipeline  
+from .diffusion_pipeline import DiffusionPipeline
 from .metrics_calculator import MetricsCalculator
 from .visualizer import Visualizer
 from .experiment_manager import ExperimentManager
 
 __all__ = [
     "DataManager",
-    "RegressionPipeline", 
+    "RegressionPipeline",
+    "DiffusionPipeline", 
     "MetricsCalculator",
     "Visualizer",
     "ExperimentManager"

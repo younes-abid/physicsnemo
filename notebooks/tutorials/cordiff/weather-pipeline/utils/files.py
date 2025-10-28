@@ -23,12 +23,12 @@ def list_json_files(stats_dir_path):
         return []
 
 # Function to list .pt/.mdlus files in a directory
-def list_pt_files(base_path):
-    """List all .pt and .mdlus files in the models directory."""
+def list_mdlus_files(base_path):
+    """List all .mdlus files in the models directory."""
     if not os.path.exists(base_path):
         return []
     try:
-        return sorted([f for f in os.listdir(base_path) if f.endswith((".pt"))])
+        return sorted([f for f in os.listdir(base_path) if f.endswith((".mdlus"))])
     except Exception:
         return []
 

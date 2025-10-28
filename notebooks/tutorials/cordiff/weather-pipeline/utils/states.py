@@ -57,7 +57,7 @@ def reset_regression_variables():
         "current_results": None,
         
         # Experiment management - Always create new instances
-        "experiment_manager": ExperimentManager(),
+        "experiment_manager": ExperimentManager(experiments_dir="/app/outputs/weather-pipeline/regression/experiments"),
         "metrics_calculator": MetricsCalculator(),
         "visualizer": Visualizer(),
         "regression_pipeline": None,
@@ -86,23 +86,49 @@ def reset_diffusion_variables():
         "selected_model_file": None,
         "model_index": None,
         
-        # Experiment management - Always create new instances
-        "experiment_manager": ExperimentManager(),
+        # Regression model configuration (needed for ResidualLoss baseline)
+        "regression_model_dir_path": "/app/checkpoints_regression/",
+        "regression_model_files": [],
+        "regression_selected_model_file": None,
+        "regression_model_path": None,
+        
+        # Diffusion model management
+        "model_loaded": False,
+        "model_info": None,
+        "model_validation_status": None,
+        "loss_function_loaded": False,
+        "regression_loaded": False,
+        
+        # Experiment execution
+        "experiment_running": False,
+        "experiment_completed": False,
+        "current_results": None,
+        
+        # Experiment management - Always create new instances with diffusion-specific directory
+        "experiment_manager": ExperimentManager(experiments_dir="/app/outputs/weather-pipeline/diffusion/experiments"),
         "metrics_calculator": MetricsCalculator(),
         "visualizer": Visualizer(),
         "diffusion_pipeline": None,
-        "model_loaded": False,
-        "current_results": None,
         
-        # Configuration
-        "done": False,
+        # Diffusion-specific parameters
         "noise_level": 0.1,
         "num_steps": 50,
+        "inference_mode": "validation",  # "validation" or "production"
+        
+        # UI state
+        "done": False,
+        "show_results": False,
+        "results_auto_loaded": False,
+        "selected_history_experiment": None,
+        "history_view_mode": "individual",  # "individual" or "aggregate"
         
         # Selectbox indices for UI state management
         "model_selectbox_index": 0,
+        "regression_model_selectbox_index": 0,
         "viz_option_selectbox_index": 0,
         "delete_experiment_selectbox_index": 0,
+        "history_experiment_selectbox_index": 0,
+        "inference_mode_selectbox_index": 0,
     }
 
 def reset_statistics_variables():
