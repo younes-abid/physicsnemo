@@ -157,6 +157,20 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
         with st.spinner("Running diffusion prediction..."):
             start_time = time.time()
             
+            # DETERMINISTIC EXECUTION: Set seeds for reproducible results
+            experiment_seed = hash(experiment_hash) % (2**31)  # Use experiment hash as seed
+            np.random.seed(experiment_seed)
+            torch.manual_seed(experiment_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(experiment_seed)
+                torch.cuda.manual_seed_all(experiment_seed)
+            
+            # Ensure deterministic behavior
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            
+            st.info(f"🎲 Using deterministic seed: {experiment_seed} (from experiment hash)")
+            
             # Create data manager
             data_manager = DataManager(
                 data_file_path=st.session_state.raw_data["data_file_path"],
@@ -227,7 +241,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
             end_time = time.time()
             execution_time = end_time - start_time
             
-            # Save experiment
+            # Save experiment WITHOUT regression baseline in metadata (to keep YAML files small)
             experiment_dir = st.session_state.diffusion["experiment_manager"].save_experiment(
                 experiment_hash=experiment_hash,
                 model_path=st.session_state.diffusion["selected_model"],
@@ -244,12 +258,39 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
                     "stats_dir": st.session_state.raw_data["stats_dir_path"],
                     "stats_file": st.session_state.raw_data["stats_file_path"],
                     "manual_normalization": True,
-                    "regression_baseline": {
-                        "u10_reg": u10_reg.tolist() if hasattr(u10_reg, 'tolist') else u10_reg,
-                        "v10_reg": v10_reg.tolist() if hasattr(v10_reg, 'tolist') else v10_reg
-                    }
+                    "regression_baseline_available": True,  # Flag to indicate baseline exists
+                    "regression_model_path": st.session_state.regression["selected_model"],  # Reference to regression model used
+                    "experiment_seed": experiment_seed  # Store seed for reproducibility
                 }
             )
+            
+            # OPTIONAL: Save regression baseline as separate NetCDF file (efficient storage)
+            try:
+                import xarray as xr
+                from datetime import datetime
+                
+                # Create regression baseline dataset
+                baseline_ds = xr.Dataset({
+                    'u10_regression': (['y', 'x'], u10_reg),
+                    'v10_regression': (['y', 'x'], v10_reg),
+                })
+                
+                # Add metadata (fix: use current timestamp instead of undefined metadata)
+                baseline_ds.attrs['description'] = 'Regression baseline for diffusion experiment'
+                baseline_ds.attrs['experiment_hash'] = experiment_hash
+                baseline_ds.attrs['regression_model'] = os.path.basename(st.session_state.regression["selected_model"])
+                baseline_ds.attrs['created_at'] = datetime.now().isoformat()
+                baseline_ds.attrs['experiment_seed'] = experiment_seed
+                
+                # Save as NetCDF file in experiment directory
+                baseline_file = os.path.join(experiment_dir, 'regression_baseline.nc')
+                baseline_ds.to_netcdf(baseline_file)
+                
+                st.info(f"💾 Regression baseline saved to: {os.path.basename(baseline_file)}")
+                
+            except Exception as e:
+                st.warning(f"⚠️ Could not save regression baseline as NetCDF: {str(e)}")
+                # Continue without baseline file - not critical
             
             # Store results in session state
             st.session_state.diffusion["current_results"] = {
@@ -260,6 +301,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
                 'metrics': metrics,
                 'experiment_hash': experiment_hash,
                 'execution_time': execution_time,
+                'experiment_seed': experiment_seed,  # Store seed for display
                 'regression_baseline': {
                     'u10_reg': u10_reg,
                     'v10_reg': v10_reg
@@ -269,6 +311,8 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
             st.session_state.diffusion["experiment_completed"] = True
             st.session_state.diffusion["show_results"] = True
             st.session_state.diffusion["done"] = True
+            
+            st.success(f"✅ Experiment completed with deterministic seed: {experiment_seed}")
             
             return True
             
@@ -508,9 +552,16 @@ def display_experiments_history():
                 exec_times = []
                 
                 for exp in all_experiments:
-                    if 'overall' in exp['metrics']:
+                    if 'overall_r2' in exp['metrics']:
+                        r2_values.append(exp['metrics']['overall_r2'])
+                    elif 'overall' in exp['metrics']:
                         r2_values.append(exp['metrics']['overall']['r2'])
+                    
+                    if 'overall_rmse' in exp['metrics']:
+                        rmse_values.append(exp['metrics']['overall_rmse'])
+                    elif 'overall' in exp['metrics']:
                         rmse_values.append(exp['metrics']['overall']['rmse'])
+                        
                     exec_times.append(exp['execution_time'])
                 
                 # Display aggregate metrics
