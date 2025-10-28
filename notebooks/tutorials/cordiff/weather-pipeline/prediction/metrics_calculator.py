@@ -18,7 +18,7 @@ class MetricsCalculator:
         """Initialize MetricsCalculator."""
         pass
     
-    def compute_regression_metrics(self, 
+    def compute_metrics(self, 
                                  u10_pred: np.ndarray, 
                                  v10_pred: np.ndarray,
                                  u10_true: np.ndarray, 

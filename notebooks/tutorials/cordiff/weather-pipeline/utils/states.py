@@ -86,12 +86,6 @@ def reset_diffusion_variables():
         "selected_model_file": None,
         "model_index": None,
         
-        # Regression model configuration (needed for ResidualLoss baseline)
-        "regression_model_dir_path": "/app/checkpoints_regression/",
-        "regression_model_files": [],
-        "regression_selected_model_file": None,
-        "regression_model_path": None,
-        
         # Diffusion model management
         "model_loaded": False,
         "model_info": None,
@@ -124,7 +118,6 @@ def reset_diffusion_variables():
         
         # Selectbox indices for UI state management
         "model_selectbox_index": 0,
-        "regression_model_selectbox_index": 0,
         "viz_option_selectbox_index": 0,
         "delete_experiment_selectbox_index": 0,
         "history_experiment_selectbox_index": 0,

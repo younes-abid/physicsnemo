@@ -32,7 +32,7 @@ class ExperimentManager:
         """Create necessary directories if they don't exist."""
         os.makedirs(self.experiments_dir, exist_ok=True)
     
-    def generate_experiment_hash(self, model_path: str, data_path: str, sample_idx: int = None) -> str:
+    def generate_experiment_hash(self, model_path: str, data_path: str, sample_idx: int = None, dependent_model_path: str = None) -> str:
         """
         Generate a unique hash for the experiment based on model and data paths.
         
@@ -40,6 +40,7 @@ class ExperimentManager:
             model_path: Path to the model checkpoint
             data_path: Path to the data file
             sample_idx: Sample index (optional)
+            dependent_model_path: Path to dependent model (e.g., regression model for diffusion) (optional)
             
         Returns:
             Hexadecimal hash string
@@ -48,6 +49,8 @@ class ExperimentManager:
         hash_string = f"{model_path}_{data_path}"
         if sample_idx is not None:
             hash_string += f"_{sample_idx}"
+        if dependent_model_path is not None:
+            hash_string += f"_{dependent_model_path}"
         
         # Generate MD5 hash
         return hashlib.md5(hash_string.encode()).hexdigest()[:8]  # Use first 8 characters

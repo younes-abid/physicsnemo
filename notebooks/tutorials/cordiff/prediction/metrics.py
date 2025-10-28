@@ -72,7 +72,7 @@ class MetricsCalculator:
         
         return metrics
     
-    def compute_regression_metrics(self, u10_pred: np.ndarray, v10_pred: np.ndarray,
+    def compute_metrics(self, u10_pred: np.ndarray, v10_pred: np.ndarray,
                                  u10_true: np.ndarray, v10_true: np.ndarray) -> Dict[str, float]:
         """
         Compute comprehensive metrics for regression predictions.
@@ -143,10 +143,10 @@ class MetricsCalculator:
         print("=== Computing Comparison Metrics ===")
         
         # Compute metrics for regression
-        reg_metrics = self.compute_regression_metrics(u10_reg, v10_reg, u10_true, v10_true)
+        reg_metrics = self.compute_metrics(u10_reg, v10_reg, u10_true, v10_true)
         
         # Compute metrics for diffusion
-        diff_metrics = self.compute_regression_metrics(u10_diff, v10_diff, u10_true, v10_true)
+        diff_metrics = self.compute_metrics(u10_diff, v10_diff, u10_true, v10_true)
         
         # Create comparison dictionary
         comparison = {

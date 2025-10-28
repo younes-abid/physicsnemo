@@ -153,7 +153,7 @@ def run_regression_experiment(experiment_hash, is_rerun=False):
             u10_true, v10_true = data_manager.get_ground_truth()
             
             # Calculate metrics
-            metrics = st.session_state.regression["metrics_calculator"].compute_regression_metrics(
+            metrics = st.session_state.regression["metrics_calculator"].compute_metrics(
                 u10_pred, v10_pred, u10_true, v10_true, data_manager
             )
             
