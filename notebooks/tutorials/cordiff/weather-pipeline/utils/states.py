@@ -40,7 +40,7 @@ def reset_regression_variables():
     """Factory function to create fresh regression state variables."""
     return {
         # Model configuration
-        "model_dir_path": "/app/checkpoints_regression/",
+        "model_dir_path": "/app/checkpoints_regression/U10_V10",
         "model_files": [],
         "selected_model": None,
         "selected_model_file": None,
@@ -80,7 +80,7 @@ def reset_diffusion_variables():
     """Factory function to create fresh diffusion state variables."""
     return {
         # Model configuration
-        "model_dir_path": "/app/checkpoints_diffusion/",
+        "model_dir_path": "/app/checkpoints_diffusion/U10_V10",
         "model_files": [],
         "selected_model": None,
         "selected_model_file": None,

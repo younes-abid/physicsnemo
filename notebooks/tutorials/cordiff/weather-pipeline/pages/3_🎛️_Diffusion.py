@@ -77,8 +77,6 @@ def load_diffusion_model():
     
     try:
         with st.spinner("Loading diffusion model..."):
-            # Use the EXACT same configuration structure as the working debug file
-            OUTPUT_DIR = "/app/"
             
             # DIFFUSION CONFIGURATION (EXACT COPY from working debug file)
             diffusion_config = {
@@ -109,12 +107,12 @@ def load_diffusion_model():
                     "patch_nums_iter": [1],
                 },
                 "checkpoint_config": {
-                    "checkpoint_dir": OUTPUT_DIR + "checkpoints_diffusion/",
-                    "checkpoint_index": 265008,
+                    "checkpoint_dir": st.session_state.diffusion["model_dir_path"], 
+                    "checkpoint_index": st.session_state.diffusion["selected_model_file"].split(".")[-2], 
                 },
                 # Add the regression path that ResidualLoss needs internally
                 "training_config": {
-                    "regression_checkpoint_path": OUTPUT_DIR + "checkpoints_regression/UNet.0.535008.mdlus",
+                    "regression_checkpoint_path": st.session_state.regression["selected_model"] 
                 }
             }
             
