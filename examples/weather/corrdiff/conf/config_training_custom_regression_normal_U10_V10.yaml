@@ -64,7 +64,7 @@ dataset:
     stats_path: "/app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.json"
     # Path to json stats file
     input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
-    output_variables: ["U10", "V10"]
+    output_variables: ["U10", "V10"] #["T2", "U10", "V10", "rain_rate", "SST", "TSK", "Q2", "PSFC"]
     invariant_variables: []  # Optional: leave empty if not used
 
 validation:
@@ -110,14 +110,14 @@ training:
 
 # parameters for tensorboard logging
 tensorboard:
-    log_dir: /app/tensorboard/regression
+    log_dir: /app/tensorboard/regression/U10_V10
     # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb/regression"
+    results_dir: "/app/wandb/regression/U10_V10"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

@@ -157,19 +157,20 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
         with st.spinner("Running diffusion prediction..."):
             start_time = time.time()
             
-            # DETERMINISTIC EXECUTION: Set seeds for reproducible results
-            experiment_seed = hash(experiment_hash) % (2**31)  # Use experiment hash as seed
-            np.random.seed(experiment_seed)
-            torch.manual_seed(experiment_seed)
+            # DETERMINISTIC EXECUTION: Use user-selected seed for reproducible results
+            user_seed = st.session_state.diffusion.get("user_seed", 42)
+            
+            np.random.seed(user_seed)
+            torch.manual_seed(user_seed)
             if torch.cuda.is_available():
-                torch.cuda.manual_seed(experiment_seed)
-                torch.cuda.manual_seed_all(experiment_seed)
+                torch.cuda.manual_seed(user_seed)
+                torch.cuda.manual_seed_all(user_seed)
             
             # Ensure deterministic behavior
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
             
-            st.info(f"🎲 Using deterministic seed: {experiment_seed} (from experiment hash)")
+            st.info(f"🎲 Using user-selected seed: {user_seed}")
             
             # Create data manager
             data_manager = DataManager(
@@ -260,7 +261,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
                     "manual_normalization": True,
                     "regression_baseline_available": True,  # Flag to indicate baseline exists
                     "regression_model_path": st.session_state.regression["selected_model"],  # Reference to regression model used
-                    "experiment_seed": experiment_seed  # Store seed for reproducibility
+                    "user_seed": user_seed  # Store user-selected seed for reproducibility
                 }
             )
             
@@ -280,7 +281,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
                 baseline_ds.attrs['experiment_hash'] = experiment_hash
                 baseline_ds.attrs['regression_model'] = os.path.basename(st.session_state.regression["selected_model"])
                 baseline_ds.attrs['created_at'] = datetime.now().isoformat()
-                baseline_ds.attrs['experiment_seed'] = experiment_seed
+                baseline_ds.attrs['user_seed'] = user_seed
                 
                 # Save as NetCDF file in experiment directory
                 baseline_file = os.path.join(experiment_dir, 'regression_baseline.nc')
@@ -301,7 +302,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
                 'metrics': metrics,
                 'experiment_hash': experiment_hash,
                 'execution_time': execution_time,
-                'experiment_seed': experiment_seed,  # Store seed for display
+                'user_seed': user_seed,  # Store user seed for display
                 'regression_baseline': {
                     'u10_reg': u10_reg,
                     'v10_reg': v10_reg
@@ -312,7 +313,7 @@ def run_diffusion_experiment(experiment_hash, is_rerun=False):
             st.session_state.diffusion["show_results"] = True
             st.session_state.diffusion["done"] = True
             
-            st.success(f"✅ Experiment completed with deterministic seed: {experiment_seed}")
+            st.success(f"✅ Experiment completed with user seed: {user_seed}")
             
             return True
             
@@ -748,12 +749,31 @@ with col2:
     # Model file selection
     handle_model_file_selection()
     
+    # Seed selection for reproducibility
+    selected_seed = st.number_input(
+        "Random Seed:",
+        min_value=0,
+        max_value=2147483647,  # Max int32 value
+        value=st.session_state.diffusion.get("user_seed", 42),
+        step=1,
+        help="Set random seed for reproducible results. Same seed = same results.",
+        key="diffusion_seed_input"
+    )
+    
+    # Update session state when seed changes
+    if selected_seed != st.session_state.diffusion.get("user_seed", 42):
+        st.session_state.diffusion["user_seed"] = selected_seed
+        # Force recomputation of experiment hash when seed changes
+        st.rerun()
+    
     # Experiment hash and status (merged from experiment status section)
     if model_selected and data_selected and stats_selected and sample_selected:
         experiment_hash = st.session_state.diffusion["experiment_manager"].generate_experiment_hash(
             st.session_state.diffusion["selected_model"],
             st.session_state.raw_data["data_file_path"],
-            st.session_state.raw_data["date_index"]
+            st.session_state.raw_data["date_index"],
+            dependent_model_path=st.session_state.regression.get("selected_model"),  # Include regression model in hash
+            seed=selected_seed  # Include user seed in hash
         )
         experiment_exists = st.session_state.diffusion["experiment_manager"].check_experiment_exists(experiment_hash)
         
@@ -844,7 +864,9 @@ with col1:
         experiment_hash = st.session_state.diffusion["experiment_manager"].generate_experiment_hash(
             st.session_state.diffusion["selected_model"],
             st.session_state.raw_data["data_file_path"],
-            st.session_state.raw_data["date_index"]
+            st.session_state.raw_data["date_index"],
+            dependent_model_path=st.session_state.regression.get("selected_model"),  # Include regression model in hash
+            seed=st.session_state.diffusion.get("user_seed", 42)  # Include user seed in hash
         )
         experiment_exists = st.session_state.diffusion["experiment_manager"].check_experiment_exists(experiment_hash)
         
@@ -864,7 +886,9 @@ with col2:
         experiment_hash = st.session_state.diffusion["experiment_manager"].generate_experiment_hash(
             st.session_state.diffusion["selected_model"],
             st.session_state.raw_data["data_file_path"],
-            st.session_state.raw_data["date_index"]
+            st.session_state.raw_data["date_index"],
+            dependent_model_path=st.session_state.regression.get("selected_model"),  # Include regression model in hash
+            seed=st.session_state.diffusion.get("user_seed", 42)  # Include user seed in hash
         )
         experiment_exists = st.session_state.diffusion["experiment_manager"].check_experiment_exists(experiment_hash)
         
@@ -887,7 +911,9 @@ if model_selected and data_selected and stats_selected and sample_selected and s
     experiment_hash = st.session_state.diffusion["experiment_manager"].generate_experiment_hash(
         st.session_state.diffusion["selected_model"],
         st.session_state.raw_data["data_file_path"],
-        st.session_state.raw_data["date_index"]
+        st.session_state.raw_data["date_index"],
+        dependent_model_path=st.session_state.regression.get("selected_model"),  # Include regression model in hash
+        seed=st.session_state.diffusion.get("user_seed", 42)  # Include user seed in hash
     )
     experiment_exists = st.session_state.diffusion["experiment_manager"].check_experiment_exists(experiment_hash)
     

@@ -15,8 +15,8 @@ docker exec -it physiscsnemo_container /bin/bash
 ## This will build the docker image and run the example script inside the container.
 bash scripts/example.sh
 
-bash scripts/train_regression.sh
-bash scripts/train_diffusion.sh
+bash scripts/train_regression_normal_T2_TSK.sh
+bash scripts/train_diffusion_normal_T2_TSK.sh
 ```
 
 ```bash
@@ -30,7 +30,7 @@ tmux new -s train_diffusion
 bash scripts/run_docker.sh
 docker exec -it physiscsnemo_container /bin/bash
 
-bash scripts/train_diffusion_normal.sh
+bash scripts/train_regression_normal_T2_TSK.sh
 # Detach from the session by pressing Ctrl + B, then D
 # To reattach to the session later, use:
 tmux attach -t train_diffusion
