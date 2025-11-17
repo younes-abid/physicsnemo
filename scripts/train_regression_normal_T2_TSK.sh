@@ -18,7 +18,22 @@ F11=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2023-10-26_2024-04-29_150.nc"
 VAL=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2024-04-30_2024-05-30_21.nc"
 
 STAT=$STATS_DIR"stat.json"
-CHECKPOINT_PATH="/app/checkpoints_regression/T2_TSK/"
+CONFIG_NAME="config_training_custom_regression_normal_T2_TSK"
+CHECKPOINT_PATH="/app/checkpoints/T2_TSK/checkpoints_regression/"
+LOGS_PATH="/app/logs/T2_TSK/regression/"
+
+# Create logs directory if it doesn't exist
+mkdir -p $LOGS_PATH
+
+# Create a timestamped main log file for this training session
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+MAIN_LOG="${LOGS_PATH}training_${TIMESTAMP}.log"
+
+# Log function to write to both console and log file
+log_message() {
+    local message="$1"
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $message" | tee -a "$MAIN_LOG"
+}
 
 # Function to train on a set of files
 train_on_files() {
@@ -26,13 +41,19 @@ train_on_files() {
     local highest_checkpoint=$(ls $CHECKPOINT_PATH*checkpoint.0* 2>/dev/null | sort -t '.' -k 3 -n | tail -n 1 | awk -F '.' '{print $3}')
     highest_checkpoint=${highest_checkpoint:-0}  # Default to 0 if empty
     training_duration=$((training_duration + DURATION_INCREMENT))
-    echo "Resuming from $highest_checkpoint until duration: $training_duration"
+    
+    # Create a log file for this specific training run
+    local train_log="${LOGS_PATH}train_duration_${training_duration}_${TIMESTAMP}.log"
+    
+    log_message "Resuming from $highest_checkpoint until duration: $training_duration"
+    echo "Files: ${files[@]}" >> "$MAIN_LOG"
 
     # Format the file paths as a comma-separated list
     local formatted_files=$(printf ', "%s"' "${files[@]}")
     formatted_files="[${formatted_files:2}]"  # Remove the leading comma and space
 
     if (( training_duration > highest_checkpoint )); then
+        log_message "Starting training... (logs: $train_log)"
         cd /app && torchrun --nproc_per_node=8 \
             examples/weather/corrdiff/train.py \
             hydra.run.dir=/app/outputs \
@@ -46,34 +67,46 @@ train_on_files() {
             training.hp.lr=0.00005 \
             training.perf.fp_optimizations="fp32" \
             training.io.load_optimizer=False \
-            --config-name=config_training_custom_regression_normal_T2_TSK
+            --config-name=$CONFIG_NAME \
+            >> "$train_log" 2>&1
+        
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
+            log_message "Training completed successfully (duration: $training_duration)"
+        else
+            log_message "Training failed with exit code $exit_code (duration: $training_duration)"
+        fi
     else
-        echo "Training duration is lower than or equal to the highest checkpoint. Skipping training."
+        log_message "Training duration is lower than or equal to the highest checkpoint. Skipping training."
     fi
 }
 
 # 1. Warm-up round of training
 DURATION_INCREMENT=5000
 training_duration=0
-echo "Warm up on one file"
+log_message "========================================"
+log_message "Warm up on one file"
+log_message "========================================"
 train_on_files "$F1"
 
-echo "--------------------------------------"
-echo "First round of training"
-echo "1 file = 150 days *24 hours =3600 steps"
-echo "3 files = 450 days *24 hours =10800 steps"
-echo "We set the increment to 15000 to ensure we go beyond 10800 steps"
+log_message "========================================"
+log_message "First round of training"
+log_message "1 file = 150 days *24 hours =3600 steps"
+log_message "3 files = 450 days *24 hours =10800 steps"
+log_message "We set the increment to 15000 to ensure we go beyond 10800 steps"
+log_message "========================================"
 DURATION_INCREMENT=15000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F4" "$F5" "$F6"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F10" "$F11"
 
-echo "--------------------------------------"
-echo "Second round of training"
-echo "1 file = 150 days *24 hours =3600 steps"
-echo "3 files = 450 days *24 hours =10800 steps"
-echo "We set the increment to 25000 to ensure we go beyond 10800 steps twice"
+log_message "========================================"
+log_message "Second round of training"
+log_message "1 file = 150 days *24 hours =3600 steps"
+log_message "3 files = 450 days *24 hours =10800 steps"
+log_message "We set the increment to 25000 to ensure we go beyond 10800 steps twice"
+log_message "========================================"
 DURATION_INCREMENT=25000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
@@ -81,11 +114,12 @@ train_on_files "$F5" "$F6" "$F7"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F9" "$F10" "$F11"
 
-echo "--------------------------------------"
-echo "Third round of training"
-echo "1 file = 150 days *24 hours =3600 steps"
-echo "3 files = 450 days *24 hours =10800 steps"
-echo "We set the increment to 35000 to ensure we go beyond 10800 steps thrice"
+log_message "========================================"
+log_message "Third round of training"
+log_message "1 file = 150 days *24 hours =3600 steps"
+log_message "3 files = 450 days *24 hours =10800 steps"
+log_message "We set the increment to 35000 to ensure we go beyond 10800 steps thrice"
+log_message "========================================"
 DURATION_INCREMENT=35000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
@@ -93,14 +127,20 @@ train_on_files "$F5" "$F6" "$F7"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F9" "$F10" "$F11"
 
-echo "--------------------------------------"
-echo "Forth round of training"
-echo "1 file = 150 days *24 hours =3600 steps"
-echo "3 files = 450 days *24 hours =10800 steps"
-echo "We set the increment to 45000 to ensure we go beyond 10800 steps four times"
+log_message "========================================"
+log_message "Fourth round of training"
+log_message "1 file = 150 days *24 hours =3600 steps"
+log_message "3 files = 450 days *24 hours =10800 steps"
+log_message "We set the increment to 45000 to ensure we go beyond 10800 steps four times"
+log_message "========================================"
 DURATION_INCREMENT=45000
 train_on_files "$F1" "$F2" "$F3"
 train_on_files "$F3" "$F4" "$F5"
 train_on_files "$F5" "$F6" "$F7"
 train_on_files "$F7" "$F8" "$F9"
 train_on_files "$F9" "$F10" "$F11"
+
+log_message "========================================"
+log_message "All training rounds completed!"
+log_message "Main log file: $MAIN_LOG"
+log_message "========================================"

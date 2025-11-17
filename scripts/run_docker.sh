@@ -18,8 +18,8 @@ docker run -it --rm \
     -v "$(pwd)/scripts:/app/scripts" \
     -v "$(pwd)/notebooks:/app/notebooks" \
     -v "$(pwd)/outputs:/app/outputs" \
-    -v "$(pwd)/outputs/checkpoints_regression:/app/checkpoints_regression" \
-    -v "$(pwd)/outputs/checkpoints_diffusion:/app/checkpoints_diffusion" \
+    -v "$(pwd)/outputs/checkpoints:/app/checkpoints" \
+    -v "$(pwd)/outputs/logs:/app/logs" \
     -v "$(pwd)/outputs/wandb:/app/wandb" \
     -v "$(pwd)/outputs/tensorboard:/app/tensorboard" \
     physiscsnemo:latest

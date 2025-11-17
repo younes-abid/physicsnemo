@@ -18,7 +18,7 @@ F11=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2023-10-26_2024-04-29_150.nc"
 VAL=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2024-04-30_2024-05-30_21.nc"
 
 STAT=$STATS_DIR"stat.json"
-CHECKPOINT_PATH="/app/checkpoints_diffusion/"
+CHECKPOINT_PATH="/app/checkpoints_diffusion/U10_V10/"
 
 # Function to train on a set of files
 train_on_files() {

@@ -107,18 +107,18 @@ training:
         validation_freq: 500
         validation_steps: 100
         load_optimizer: False
-        checkpoint_dir: /app/checkpoints_regression/T2_TSK
+        checkpoint_dir: /app/checkpoints/T2_TSK
 
 # parameters for tensorboard logging
 tensorboard:
-    log_dir: /app/tensorboard/regression/T2_TSK
+    log_dir: /app/tensorboard/T2_TSK/regression
     # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb/regression/T2_TSK"
+    results_dir: "/app/wandb/T2_TSK/regression"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

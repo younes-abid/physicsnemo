@@ -159,12 +159,10 @@ def setup_performance_settings(cfg) -> tuple:
 
 def setup_checkpoint_and_seeds(dist, cfg, cur_nimg) -> str:
     """Setup checkpoint directory and configure seeds/CUDA settings."""
-    # checkpoint_dir = get_checkpoint_dir(
-    #     str(cfg.training.io.get("checkpoint_dir", ".")), cfg.model.name
-    # )
+    checkpoint_dir = get_checkpoint_dir(
+        str(cfg.training.io.get("checkpoint_dir", ".")), cfg.model.name
+    )
     
-    # Use the checkpoint_dir directly from config instead of adding suffixes
-    checkpoint_dir = str(cfg.training.io.get("checkpoint_dir", f"./checkpoints_{cfg.model.name}"))
     
     set_seed(dist.rank + cur_nimg)
     configure_cuda_for_consistent_precision()

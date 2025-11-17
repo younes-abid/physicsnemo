@@ -25,18 +25,20 @@ nohup bash scripts/run_docker.sh && bash scripts/train_diffusion.sh > ./output/o
 
 ```bash
 # using tmux
-tmux new -s train_diffusion
-# Run your commands inside the tmux session
+# list tmux sessions
+tmux ls
+# if tmux session not created yet:
+tmux new -s train
+# else
+tmux attach -t train
+# inside the tmux session
+# if docker container not running yet
 bash scripts/run_docker.sh
+# else
 docker exec -it physiscsnemo_container /bin/bash
 
 bash scripts/train_regression_normal_T2_TSK.sh
 # Detach from the session by pressing Ctrl + B, then D
-# To reattach to the session later, use:
-tmux attach -t train_diffusion
-
-#to check all tmux sessions
-tmux ls
 
 #to kill a tmux session
 tmux kill-session -t train_diffusion
@@ -64,7 +66,7 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 ```bash
 apt update && apt install lsof && sudo lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
 
-tensorboard --logdir=/app/tensorboard/regression --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/regression/T2_TSK --host 0.0.0.0 --port 6006
 tensorboard --logdir=/app/tensorboard/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
