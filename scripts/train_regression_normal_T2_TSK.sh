@@ -17,10 +17,13 @@ F10=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2023-05-14_2023-10-25_150.nc"
 F11=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2023-10-26_2024-04-29_150.nc"
 VAL=$ERA5_WRF_COMBINED_CONCATENATED_DIR"2024-04-30_2024-05-30_21.nc"
 
+MODEL="regression" # can be regression or diffusion
+VARIABLES="T2_TSK" # can be on of these options ["U10_V10", "T2_TSK", "Q2_rain_rate", "SST_PSFC"]
+
 STAT=$STATS_DIR"stat.json"
-CONFIG_NAME="config_training_custom_regression_normal_T2_TSK"
-CHECKPOINT_PATH="/app/checkpoints/T2_TSK/checkpoints_regression/"
-LOGS_PATH="/app/logs/T2_TSK/regression/"
+CONFIG_NAME="config_training_custom_${MODEL}_normal_${VARIABLES}"
+CHECKPOINT_PATH="/app/checkpoints/${VARIABLES}/checkpoints_${MODEL}/"
+LOGS_PATH="/app/logs/${VARIABLES}/${MODEL}/"
 
 # Create logs directory if it doesn't exist
 mkdir -p $LOGS_PATH

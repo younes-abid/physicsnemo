@@ -17,7 +17,7 @@
 hydra:
     job:
           chdir: false
-          name: custom_regression
+          name: custom_diffusion
     run:
           dir: ./output/${hydra:job.name}
     searchpath:
@@ -34,7 +34,7 @@ defaults:
     #   `cwb`: full CWB dataset for Taiwan.
     #   `custom`: user-defined dataset. Parameters need to be specified below.
 
-    - model: regression
+    - model: diffusion
     # The model type.
     # Accepted values:
     #     `regression`: a regression UNet for deterministic predictions
@@ -59,12 +59,12 @@ defaults:
 # Modify or add below parameters that should be passed as argument to the
 # user-defined dataset class.
 dataset:
-    data_path: /app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.nc
+    data_path: ./data/custom_data_1/ERA5_wrf_combined/custom_concat_train.nc
     # Path to .nc data file
-    stats_path: "/app/data/custom_data_1/ERA5_wrf_combined_concatenated/custom_concat_train.json"
+    stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
     # Path to json stats file
     input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
-    output_variables: ["U10", "V10"] #["T2", "U10", "V10", "rain_rate", "SST", "TSK", "Q2", "PSFC"]
+    output_variables: ["U10", "V10"]
     invariant_variables: []  # Optional: leave empty if not used
 
 validation:
@@ -79,16 +79,17 @@ validation:
 # Training parameters
 training:
     hp:
-        training_duration: 2000000 # Training duration based on the number of processed samples
+        training_duration: 2000000
+        # Training duration based on the number of processed samples
         total_batch_size: 16
-        batch_size_per_gpu: 2 # Set explicitly to avoid "auto" issues
-        lr:  0.0005
-        grad_clip_threshold: null # null # 10000.0 # Gradient clipping threshold; set to null to disable
+        batch_size_per_gpu: 2
+        lr: 0.0005 #0.00005, 
+        grad_clip_threshold: null
         lr_decay: 0.9
-        lr_rampup: 5000
+        lr_rampup: 5000 #10000 
         lr_decay_rate: 50000.0
     perf:
-        fp_optimizations: amp-fp32
+        fp_optimizations: fp32
         # Floating point mode, one of ["fp32", "fp16", "amp-fp16", "amp-bf16"]
         # "amp-{fp16,bf16}" activates Automatic Mixed Precision (AMP) with {float16,bfloat16}
         dataloader_workers: 32
@@ -97,8 +98,8 @@ training:
         use_gpu: true
         num_gpus: -1  # Use all available GPUs
     io:
-        regression_checkpoint_path: null
         print_progress_freq: 500
+        regression_checkpoint_path: /app/checkpoints/U10_V10/checkpoints_regression/UNet.0.535008.mdlus
         metric_log_freq: 1
         grad_log_freq: 400
         image_log_freq: 4000
@@ -111,14 +112,14 @@ training:
 
 # parameters for tensorboard logging
 tensorboard:
-    log_dir: /app/tensorboard/U10_V10/regression
+    log_dir: /app/tensorboard/U10_V10/diffusion
     # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb/U10_V10/regression"
+    results_dir: "/app/wandb/U10_V10/diffusion"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients

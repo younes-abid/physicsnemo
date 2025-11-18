@@ -64,7 +64,7 @@ dataset:
     stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
     # Path to json stats file
     input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
-    output_variables: ["U10", "V10"]
+    output_variables: ["T2", "TSK"]
     invariant_variables: []  # Optional: leave empty if not used
 
 validation:
@@ -73,7 +73,7 @@ validation:
     stats_path: ./data/custom_data_1/ERA5_wrf_combined/uae_stats.json
     # Path to json stats file
     input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"] #"sst",
-    output_variables: ["U10", "V10"]
+    output_variables: ["T2", "TSK"]
     invariant_variables: []  # Optional: leave empty if not used
 
 # Training parameters
@@ -99,7 +99,7 @@ training:
         num_gpus: -1  # Use all available GPUs
     io:
         print_progress_freq: 500
-        regression_checkpoint_path: /app/checkpoints_regression/U10_V10/UNet.0.535008.mdlus
+        regression_checkpoint_path: /app/checkpoints/T2_TSK/checkpoints_regression/UNet.0.295008.mdlus
         metric_log_freq: 1
         grad_log_freq: 400
         image_log_freq: 4000
@@ -108,17 +108,18 @@ training:
         validation_freq: 500
         validation_steps: 100
         load_optimizer: False
+        checkpoint_dir: /app/checkpoints/T2_TSK
 
 # parameters for tensorboard logging
 tensorboard:
-    log_dir: /app/tensorboard/diffusion
+    log_dir: /app/tensorboard/T2_TSK/diffusion
     # Directory to store tensorboard logs
 
 # Parameters for wandb logging
 wandb:
     mode: offline
     # Configure whether to use wandb: "offline", "online", "disabled"
-    results_dir: "/app/wandb/diffusion"
+    results_dir: "/app/wandb/T2_TSK/diffusion"
     # Directory to store wandb results
     watch_model: false
     # If true, wandb will track model parameters and gradients
