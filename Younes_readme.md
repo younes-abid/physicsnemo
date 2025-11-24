@@ -37,11 +37,11 @@ bash scripts/run_docker.sh
 # else
 docker exec -it physiscsnemo_container /bin/bash
 
-bash scripts/train_regression_normal_T2_TSK.sh
+bash scripts/train_regression_normal_SST_PSFC.sh
 # Detach from the session by pressing Ctrl + B, then D
 
 #to kill a tmux session
-tmux kill-session -t train_diffusion
+tmux kill-session -t train
 ```
 # To run the Earth2Studio container, you can use the following command:
 The earth2studio image is built from another repository, you can find it here:https://github.com/younes-abid/earth2studio 
@@ -58,6 +58,8 @@ ssh -L 8889:localhost:8889 younes.abid@10.120.125.144
 # To run the Jupyter Notebook server, you can use the following command:
 ```bash
 #inside the container
+jupyter notebook list
+jupyter notebook stop 8888
 jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 ```
 
@@ -66,8 +68,9 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 ```bash
 apt update && apt install lsof && sudo lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
 
-tensorboard --logdir=/app/tensorboard/T2_TSK/regression --host 0.0.0.0 --port 6006
-tensorboard --logdir=/app/tensorboard/diffusion --host 0.0.0.0 --port 6006
+#["U10_V10", "T2_TSK", "Q2_rain_rate", "SST_PSFC"]
+tensorboard --logdir=/app/tensorboard/SST_PSFC/regression --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/SST_PSFC/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
 ```

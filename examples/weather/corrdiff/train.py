@@ -66,6 +66,9 @@ import torchvision.utils as vutils
 def checkpoint_list(path, suffix=".mdlus"):
     """Helper function to return sorted list, in ascending order, of checkpoints in a path"""
     checkpoints = []
+    if not os.path.exists(path):
+        #create the directory if it does not exist
+        os.makedirs(path)
     for file in os.listdir(path):
         if file.endswith(suffix):
             # Split the filename and extract the index
