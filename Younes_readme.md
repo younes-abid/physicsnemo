@@ -15,8 +15,8 @@ docker exec -it physiscsnemo_container /bin/bash
 ## This will build the docker image and run the example script inside the container.
 bash scripts/example.sh
 
-bash scripts/train_regression_normal_T2_TSK.sh
-bash scripts/train_diffusion_normal_T2_TSK.sh
+bash scripts/train_regression_normal_SST_PSFC.sh
+bash scripts/train_diffusion_normal_SST_PSFC.sh
 ```
 
 ```bash
