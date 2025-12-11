@@ -402,7 +402,7 @@ def merge_files(era_path, wrf_path, out_path, invariant_ds=None):
         ]]
 
         ds_output = ds_wrf[[
-            "T2", "U10", "V10", "rain_rate", "SST", "TSK", "Q2", "PSFC"
+            "T2", "U10", "V10", "Rain_rate", "SST", "TSK", "Q2", "PSFC","Fog_index", "Rain_rate_PT", "Rain_rate_LN"
         ]]
 
         out_file = os.path.join(out_path, f"inp_out_combined_{date_str}.nc")

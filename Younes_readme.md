@@ -37,7 +37,7 @@ bash scripts/run_docker.sh
 # else
 docker exec -it physiscsnemo_container /bin/bash
 
-bash scripts/train_regression_normal_SST_PSFC.sh
+bash scripts/train_regression_normal_Rain_rate_LN_Rain_rate_PT.sh
 # Detach from the session by pressing Ctrl + B, then D
 
 #to kill a tmux session
@@ -69,8 +69,8 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 apt update && apt install lsof && sudo lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
 
 #["U10_V10", "T2_TSK", "Q2_rain_rate", "SST_PSFC"]
-tensorboard --logdir=/app/tensorboard/SST_PSFC/regression --host 0.0.0.0 --port 6006
-tensorboard --logdir=/app/tensorboard/SST_PSFC/diffusion --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/Rain_rate_LN_Rain_rate_PT/regression --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/Rain_rate_LN_Rain_rate_PT/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
 ```
