@@ -68,8 +68,8 @@ jupyter notebook --ip=0.0.0.0 --no-browser --allow-root
 ```bash
 apt update && apt install lsof && sudo lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
 
-#["U10_V10", "T2_TSK", "Q2_rain_rate", "SST_PSFC"]
-tensorboard --logdir=/app/tensorboard/Rain_rate_LN_Rain_rate_PT/regression --host 0.0.0.0 --port 6006
+#["U10_V10", "T2_TSK", "Q2_rain_rate", "SST_PSFC", "Rain_rate_LN_Rain_rate_PT", "Fog_index"]
+tensorboard --logdir=/app/tensorboard/Fog_index/regression --host 0.0.0.0 --port 6006
 tensorboard --logdir=/app/tensorboard/Rain_rate_LN_Rain_rate_PT/diffusion --host 0.0.0.0 --port 6006
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
