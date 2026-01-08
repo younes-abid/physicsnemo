@@ -150,7 +150,19 @@ def process_single_patch(file_path: str, config: PreprocessingConfig) -> Dict[st
     """
     try:
         input_path = Path(file_path)
-        output_path = Path(config.output_dir) / input_path.name
+        
+        # Create output filename by replacing the prefix
+        input_name = input_path.name
+        
+        # Remove the old prefix (e.g., "filtered_patches_") and add new prefix
+        if input_name.startswith("filtered_patches_"):
+            base_name = input_name.replace("filtered_patches_", "", 1)
+            output_name = f"preprocessed_patches_{base_name}"
+        else:
+            # Fallback: just add preprocessed prefix
+            output_name = f"preprocessed_patches_{input_name}"
+        
+        output_path = Path(config.output_dir) / output_name
         
         # Skip if output exists and not overriding
         if output_path.exists() and not config.override_existing:
@@ -160,17 +172,15 @@ def process_single_patch(file_path: str, config: PreprocessingConfig) -> Dict[st
                 'reason': 'Output exists'
             }
         
-        # Load data
-        with xr.open_dataset(input_path) as ds:
-            # Get SAR and DSM data
-            sar_amplitude = ds['sar_amplitude'].values
-            dsm_height = ds['dsm'].values
+        # Load data - handle the correct NetCDF structure with all groups
+        with xr.open_dataset(input_path, group='/') as ds:
+            # Load all groups
+            input_group = xr.open_dataset(input_path, group='input')
+            output_group = xr.open_dataset(input_path, group='output')
+            patch_metadata_group = xr.open_dataset(input_path, group='patch_metadata')
             
-            # Process SAR amplitude
-            if config.invalid_data_strategy == "clip_to_zero":
-                sar_processed = clip_invalid_sar(sar_amplitude, config)
-            else:
-                sar_processed = sar_amplitude.copy()
+            # Get DSM height data
+            dsm_height = output_group['dsm_height'].values
             
             # Process DSM height
             if config.invalid_data_strategy == "clip_to_zero":
@@ -182,16 +192,57 @@ def process_single_patch(file_path: str, config: PreprocessingConfig) -> Dict[st
             if config.height_normalization == "relative_min_zero":
                 dsm_processed = normalize_height_relative(dsm_processed)
             
-            # Create output dataset
-            ds_out = ds.copy()
-            ds_out['sar_amplitude'] = (ds['sar_amplitude'].dims, sar_processed)
-            ds_out['dsm'] = (ds['dsm'].dims, dsm_processed)
+            # Process all SAR features in the input group
+            processed_input_vars = {}
+            for var_name in input_group.variables:
+                if var_name not in input_group.coords:  # Skip coordinate variables
+                    sar_data = input_group[var_name].values
+                    
+                    # Process SAR data
+                    if config.invalid_data_strategy == "clip_to_zero":
+                        sar_processed = clip_invalid_sar(sar_data, config)
+                    else:
+                        sar_processed = sar_data.copy()
+                    
+                    processed_input_vars[var_name] = sar_processed
+            
+            # Create output dataset with the same structure
+            ds_out = ds.copy(deep=True)
+            
+            # Update input group with processed SAR features
+            input_group_out = input_group.copy(deep=True)
+            for var_name, processed_data in processed_input_vars.items():
+                input_group_out[var_name] = (input_group[var_name].dims, processed_data)
+            
+            # Update output group with processed DSM
+            output_group_out = output_group.copy(deep=True)
+            output_group_out['dsm_height'] = (output_group['dsm_height'].dims, dsm_processed)
+            
+            # Copy patch_metadata group unchanged (no processing needed)
+            patch_metadata_group_out = patch_metadata_group.copy(deep=True)
             
             # Ensure output directory exists
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Save processed data
-            ds_out.to_netcdf(output_path, engine='netcdf4')
+            # Save the main dataset structure first
+            ds_out.to_netcdf(output_path, engine='netcdf4', mode='w')
+            
+            # Save input group
+            input_group_out.to_netcdf(output_path, engine='netcdf4', mode='a', group='input')
+            
+            # Save output group  
+            output_group_out.to_netcdf(output_path, engine='netcdf4', mode='a', group='output')
+            
+            # Save patch_metadata group (unchanged)
+            patch_metadata_group_out.to_netcdf(output_path, engine='netcdf4', mode='a', group='patch_metadata')
+            
+            # Close all datasets
+            input_group.close()
+            output_group.close()
+            patch_metadata_group.close()
+            input_group_out.close()
+            output_group_out.close()
+            patch_metadata_group_out.close()
         
         return {
             'status': 'success',
@@ -207,7 +258,7 @@ def process_single_patch(file_path: str, config: PreprocessingConfig) -> Dict[st
         }
 
 
-def preprocess_patches(config: PreprocessingConfig) -> PreprocessingResults:
+def preprocess_patches_pipeline(config: PreprocessingConfig) -> PreprocessingResults:
     """
     Preprocess all patch files with multiprocessing.
     
@@ -297,7 +348,7 @@ if __name__ == "__main__":
         num_workers=4
     )
     
-    results = preprocess_patches(config)
+    results = preprocess_patches_pipeline(config)
     
     if results.success:
         print(f"Preprocessing completed successfully!")

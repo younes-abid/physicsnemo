@@ -22,7 +22,7 @@ sys.path.append(str(Path(__file__).parent))
 from data_loader import SARDataLoader
 from coregistration import coregister_file_pair
 from feature_extraction import extract_sar_features
-from patch_generation import generate_patches_from_data
+from patch_generator import generate_patches_from_data
 from aoi_management import AOIManager
 from netcdf_writer import save_patches_to_netcdf
 

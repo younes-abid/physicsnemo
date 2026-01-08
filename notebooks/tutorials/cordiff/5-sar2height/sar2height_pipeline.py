@@ -35,8 +35,10 @@ import matplotlib.pyplot as plt
 
 # Import FilteringResults from patch_filter to avoid duplication
 from patch_filter import FilteringResults
-# Import GenerationResults from patch_generation module
-from patch_generation import GenerationResults, generate_full_patches_pipeline
+# Import GenerationResults from patch_generator module
+from patch_generator import GenerationResults, generate_full_patches_pipeline
+# Import preprocessing functionality
+from patch_preprocessor import PreprocessingResults, PreprocessingConfig, preprocess_patches_pipeline
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
@@ -56,6 +58,7 @@ class PipelineConfig:
     raw_data_dir: str
     full_patches_dir: str
     filtered_patches_dir: str
+    preprocessed_patches_dir: str  # New directory for preprocessed patches
     visualization_dir: Optional[str] = None
     log_dir: Optional[str] = None
     
@@ -90,6 +93,12 @@ class PipelineConfig:
     
     # Spatial filtering
     aoi_overlap_threshold: float = 0.0
+    
+    # Preprocessing parameters (Phase 4)
+    invalid_data_strategy: str = "clip_to_zero"  # "clip_to_zero" - clip invalid values to 0
+    sar_invalid_threshold: float = -100.0        # SAR values below this are invalid (dB)
+    dsm_invalid_threshold: float = -999.0        # DSM values below this are invalid (m)
+    height_normalization: str = "relative_min_zero"  # "none", "relative_min_zero" - shift min to 0
     
     def __post_init__(self):
         """Post-initialization to set default features if not provided."""
@@ -163,6 +172,7 @@ class SAR2HeightPipeline:
         self.discovery_results: Optional[DiscoveryResults] = None
         self.generation_results: Optional[GenerationResults] = None
         self.filtering_results: Optional[FilteringResults] = None
+        self.preprocessing_results: Optional[PreprocessingResults] = None  # New storage for preprocessing results
         
         # Component references
         self.data_loader = None
@@ -516,6 +526,167 @@ class SAR2HeightPipeline:
             
             return self.filtering_results
     
+    def preprocess_patches(self,
+                            filtered_patches_list: Optional[List[str]] = None,
+                            file_prefix: str = "preprocessed_patches",
+                            invalid_data_strategy: Optional[str] = None,
+                            height_normalization: Optional[str] = None,
+                            sar_invalid_threshold: Optional[float] = None,
+                            dsm_invalid_threshold: Optional[float] = None) -> PreprocessingResults:
+        """
+        Phase 4: Preprocess filtered patches with invalid data handling and height normalization.
+        
+        Args:
+            filtered_patches_list: List of filtered patch files to preprocess (uses filtering results if None)
+            file_prefix: Prefix for preprocessed output files
+            invalid_data_strategy: Override config setting for invalid data handling
+            height_normalization: Override config setting for height normalization
+            sar_invalid_threshold: Override config setting for SAR invalid threshold
+            dsm_invalid_threshold: Override config setting for DSM invalid threshold
+            
+        Returns:
+            PreprocessingResults: Results of patch preprocessing
+        """
+        logger.info("🔧 Phase 4: Preprocessing patches (data cleaning + normalization)...")
+        start_time = time.time()
+        
+        try:
+            # Determine input files
+            if filtered_patches_list is not None:
+                input_files = filtered_patches_list
+            elif self.filtering_results and self.filtering_results.success:
+                input_files = self.filtering_results.output_files
+            else:
+                error_msg = "Cannot preprocess patches - no filtered patches available (run filter_patches first)"
+                logger.error(error_msg)
+                return PreprocessingResults(
+                    success=False,
+                    error=error_msg,
+                    total_patches_preprocessed=0,
+                    files_processed=0,
+                    files_successful=0,
+                    files_failed=0,
+                    files_skipped=0,
+                    output_files=[],
+                    total_processing_time=time.time() - start_time
+                )
+            
+            if not input_files:
+                error_msg = "No input files provided for preprocessing"
+                logger.error(error_msg)
+                return PreprocessingResults(
+                    success=False,
+                    error=error_msg,
+                    total_patches_preprocessed=0,
+                    files_processed=0,
+                    files_successful=0,
+                    files_failed=0,
+                    files_skipped=0,
+                    output_files=[],
+                    total_processing_time=time.time() - start_time
+                )
+            
+            # Create preprocessed patches directory
+            preprocessed_dir = Path(self.config.preprocessed_patches_dir)
+            preprocessed_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use provided parameters or fall back to config
+            invalid_strategy = invalid_data_strategy if invalid_data_strategy is not None else self.config.invalid_data_strategy
+            height_norm = height_normalization if height_normalization is not None else self.config.height_normalization
+            sar_threshold = sar_invalid_threshold if sar_invalid_threshold is not None else self.config.sar_invalid_threshold
+            dsm_threshold = dsm_invalid_threshold if dsm_invalid_threshold is not None else self.config.dsm_invalid_threshold
+            
+            print(f"🔧 Preprocessing {len(input_files)} filtered patch files...")
+            print(f"  • Invalid data strategy: {invalid_strategy}")
+            print(f"  • Height normalization: {height_norm}")
+            print(f"  • SAR invalid threshold: {sar_threshold} dB")
+            print(f"  • DSM invalid threshold: {dsm_threshold} m")
+            print(f"  • Output directory: {self.config.preprocessed_patches_dir}")
+            print("-" * 60)
+            
+            # Process each input file directory (assuming input_files are NetCDF files from filter step)
+            input_dir = Path(input_files[0]).parent if input_files else None
+            if not input_dir:
+                error_msg = "No valid input directory found"
+                logger.error(error_msg)
+                return PreprocessingResults(
+                    success=False,
+                    error=error_msg,
+                    total_patches_preprocessed=0,
+                    files_processed=0,
+                    files_successful=0,
+                    files_failed=0,
+                    files_skipped=0,
+                    output_files=[],
+                    total_processing_time=time.time() - start_time
+                )
+            
+            # Create preprocessing config
+            preprocessing_config = PreprocessingConfig(
+                input_dir=str(input_dir),
+                output_dir=str(preprocessed_dir),
+                override_existing=self.config.override_existing,
+                invalid_data_strategy=invalid_strategy,
+                sar_invalid_threshold=sar_threshold,
+                dsm_invalid_threshold=dsm_threshold,
+                height_normalization=height_norm,
+                num_workers=self.config.max_workers
+            )
+            
+            # Run preprocessing
+            self.preprocessing_results = preprocess_patches_pipeline(preprocessing_config)
+            
+            # Rename output files with proper prefix if needed
+            if self.preprocessing_results.success and self.preprocessing_results.output_files and file_prefix != "preprocessed_patches":
+                renamed_files = []
+                for output_file in self.preprocessing_results.output_files:
+                    old_path = Path(output_file)
+                    new_name = f"{file_prefix}_{old_path.name}"
+                    new_path = old_path.parent / new_name
+                    if old_path.exists() and not new_path.exists():
+                        old_path.rename(new_path)
+                        renamed_files.append(str(new_path))
+                    else:
+                        renamed_files.append(str(old_path))
+                self.preprocessing_results.output_files = renamed_files
+            
+            # Print summary
+            print("\n" + "=" * 60)
+            print("🔧 PATCH PREPROCESSING COMPLETED")
+            print("=" * 60)
+            print(f"Input files: {len(input_files)}")
+            print(f"Output files: {len(self.preprocessing_results.output_files)}")
+            print(f"Files processed: {self.preprocessing_results.files_processed}")
+            print(f"Files successful: {self.preprocessing_results.files_successful}")
+            print(f"Files failed: {self.preprocessing_results.files_failed}")
+            print(f"Files skipped: {self.preprocessing_results.files_skipped}")
+            print(f"Preprocessing time: {self.preprocessing_results.total_processing_time:.1f}s")
+            
+            if self.preprocessing_results.output_files:
+                total_size = sum(Path(f).stat().st_size for f in self.preprocessing_results.output_files if Path(f).exists()) / (1024*1024)
+                print(f"Total output size: {total_size:.1f} MB")
+            
+            return self.preprocessing_results
+            
+        except Exception as e:
+            preprocessing_time = time.time() - start_time
+            error_msg = f"Patch preprocessing failed: {str(e)}"
+            logger.error(error_msg)
+            
+            self.preprocessing_results = PreprocessingResults(
+                success=False,
+                error=error_msg,
+                total_patches_preprocessed=0,
+                files_processed=0,
+                files_successful=0,
+                files_failed=0,
+                files_skipped=0,
+                output_files=[],
+                total_processing_time=preprocessing_time
+            )
+            
+            return self.preprocessing_results
+    
     def get_pipeline_summary(self) -> Dict[str, Any]:
         """Get comprehensive pipeline processing summary."""
         return {
@@ -583,6 +754,7 @@ def create_pipeline_config(raw_data_dir: str,
         raw_data_dir=raw_data_dir,
         full_patches_dir=str(output_base / "processed" / "full_patches"),
         filtered_patches_dir=str(output_base / "processed" / "filtered_patches"),
+        preprocessed_patches_dir=str(output_base / "processed" / "preprocessed_patches"),  # New directory for preprocessed patches
         visualization_dir=str(output_base / "visualizations") if save_visualizations else None,
         log_dir=str(output_base / "logs"),
         patch_size=patch_size,
