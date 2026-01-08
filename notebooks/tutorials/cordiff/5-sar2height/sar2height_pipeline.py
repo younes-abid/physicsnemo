@@ -35,6 +35,8 @@ import matplotlib.pyplot as plt
 
 # Import FilteringResults from patch_filter to avoid duplication
 from patch_filter import FilteringResults
+# Import GenerationResults from patch_generation module
+from patch_generation import GenerationResults, generate_full_patches_pipeline
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
@@ -130,155 +132,6 @@ class DiscoveryResults:
     file_pairs_info: List[Dict]
     discovery_time: float
     error: Optional[str] = None
-
-
-@dataclass
-class GenerationResults:
-    """Results from full patch generation phase."""
-    success: bool
-    files_processed: int
-    files_successful: int
-    files_failed: int
-    files_skipped: int
-    total_patches_generated: int
-    output_files: List[str]
-    generation_time: float
-    failed_files: List[str]
-    error: Optional[str] = None
-    
-    @property
-    def total_processing_time(self) -> float:
-        """Alias for generation_time for backward compatibility."""
-        return self.generation_time
-
-
-# Global worker function for multiprocessing
-def _process_file_pair_worker(args):
-    """
-    Worker function for multiprocessing patch generation.
-    
-    Args:
-        args: Tuple containing (pair_index, config, file_pairs_info, features, patch_size, save_viz)
-        
-    Returns:
-        Dict: Processing result with success status and details
-    """
-    pair_index, config_dict, file_pairs_info, features, patch_size, save_viz = args
-    
-    # Reconstruct config object from dictionary
-    config = PipelineConfig(**config_dict)
-    
-    # Import required modules in worker process
-    try:
-        from data_loader import SARDataLoader
-        from coregistration import coregister_file_pair
-        from feature_extraction import SARFeatureExtractor
-        from patch_generation import generate_all_patches_from_data
-        from netcdf_writer import save_all_patches_to_directory
-    except ImportError as e:
-        return {
-            'pair_index': pair_index,
-            'success': False,
-            'error': f"Import error in worker: {str(e)}",
-            'n_patches_generated': 0,
-            'output_files': {},
-            'processing_time': 0,
-            'pair_name': f"unknown_{pair_index}"
-        }
-    
-    # Initialize data loader in worker process
-    data_loader = SARDataLoader(config.raw_data_dir)
-    
-    # Get pair info
-    pair_info = file_pairs_info[pair_index]
-    base_name = pair_info['base_name']
-    aoi_info = pair_info['aoi']
-    
-    start_time = time.time()
-    result = {
-        'pair_index': pair_index,
-        'pair_name': base_name,
-        'success': False,
-        'error': None,
-        'n_patches_generated': 0,
-        'output_files': {},
-        'processing_time': 0
-    }
-    
-    try:
-        # Check if output file already exists and skip if override is False
-        existing_files = list(Path(config.full_patches_dir).glob(f"full_patches_{base_name}_*patches.nc"))
-        
-        if existing_files and not config.override_existing:
-            existing_file = existing_files[0]
-            result['success'] = True
-            result['n_patches_generated'] = 0
-            result['output_files'] = {'full_patches': str(existing_file)}
-            result['processing_time'] = time.time() - start_time
-            result['error'] = 'SKIPPED - Output file exists and override_existing=False'
-            return result
-        
-        # Step 1: Load data
-        intensity_data, dsm_data, intensity_meta, dsm_meta = data_loader.load_file_pair(pair_index)
-        
-        # Step 2: Coregister data
-        intensity_coreg, dsm_coreg, common_meta = coregister_file_pair(
-            intensity_data, dsm_data, intensity_meta, dsm_meta
-        )
-        
-        # Step 3: Extract features
-        feature_extractor = SARFeatureExtractor()
-        feature_data, feature_names = feature_extractor.extract_selected_features(
-            intensity_coreg, selected_features=features, metadata=common_meta
-        )
-        
-        # Step 4: Generate patches
-        all_patches = generate_all_patches_from_data(
-            features=feature_data,
-            dsm=dsm_coreg,
-            metadata=common_meta,
-            patch_size=patch_size,
-            stride=None
-        )
-        
-        result['n_patches_generated'] = len(all_patches)
-        
-        if not all_patches:
-            result['error'] = "No patches could be generated (insufficient data size)"
-            return result
-        
-        # Step 5: Save patches
-        source_metadata = {
-            'aoi_info': aoi_info,
-            'original_intensity_shape': intensity_data.shape,
-            'original_dsm_shape': dsm_data.shape,
-            'coregistered_shape': intensity_coreg.shape,
-            'n_features_extracted': len(feature_names),
-            'patch_size': patch_size
-        }
-        
-        output_file = save_all_patches_to_directory(
-            patches=all_patches,
-            output_dir=config.full_patches_dir,
-            feature_names=feature_names,
-            base_name=base_name,
-            source_metadata=source_metadata,
-            global_attrs={
-                'processing_date': datetime.now().isoformat(),
-                'enabled_features': ','.join(features),
-                'filtering_applied': False
-            }
-        )
-        
-        result['output_files'] = {'full_patches': output_file}
-        result['success'] = True
-        result['processing_time'] = time.time() - start_time
-        
-    except Exception as e:
-        result['error'] = str(e)
-        result['processing_time'] = time.time() - start_time
-    
-    return result
 
 
 class SAR2HeightPipeline:
@@ -484,61 +337,23 @@ class SAR2HeightPipeline:
             # Determine files to process
             if process_all:
                 files_to_process = list(range(n_pairs))
-                scope_msg = f"all {n_pairs} file pairs"
             else:
                 files_to_process = list(range(min(max_files, n_pairs)))
-                scope_msg = f"first {len(files_to_process)} file pairs"
             
-            # Determine processing mode
-            use_mp = self.config.use_multiprocessing and len(files_to_process) > 1
-            n_workers = min(self.config.max_workers, len(files_to_process)) if use_mp else 1
+            # Convert config to dictionary for the patch generation function
+            config_dict = self.config.__dict__.copy()
             
-            print(f"🚀 Processing {scope_msg}...")
-            print(f"  • Patch size: {p_size}×{p_size}")
-            print(f"  • Features: {len(features)} enabled")
-            print(f"  • Visualizations: {'ON' if save_viz else 'OFF'}")
-            print(f"  • Multiprocessing: {'ON' if use_mp else 'OFF'}")
-            if use_mp:
-                print(f"  • Workers: {n_workers}/{psutil.cpu_count(logical=True)} CPU cores")
-                print(f"  • Available memory: {psutil.virtual_memory().available / (1024**3):.1f} GB")
-            print("-" * 60)
-            
-            # Process files - use mutable containers for statistics
-            output_files = []
-            stats = {'successful_files': 0, 'total_patches_generated': 0}
-            failed_files = []
-            
-            if use_mp:
-                # Multiprocessing mode
-                self._process_with_multiprocessing(
-                    files_to_process, features, p_size, save_viz, n_workers,
-                    output_files, stats, failed_files
-                )
-            else:
-                # Sequential mode
-                self._process_sequentially(
-                    files_to_process, features, p_size, save_viz,
-                    output_files, stats, failed_files
-                )
-            
-            # Create and return results
-            total_time = time.time() - start_time
-            
-            # Get skipped count from stats (set by processing methods)
-            files_skipped = stats.get('skipped_files', 0)
-            
-            return GenerationResults(
-                success=len(failed_files) == 0,
-                files_processed=len(files_to_process),
-                files_successful=stats['successful_files'],
-                files_failed=len(failed_files),
-                files_skipped=files_skipped,
-                total_patches_generated=stats['total_patches_generated'],
-                output_files=output_files,
-                generation_time=total_time,
-                failed_files=failed_files,
-                error=None if len(failed_files) == 0 else f"Failed to process {len(failed_files)} files"
+            # Call the refactored patch generation function
+            self.generation_results = generate_full_patches_pipeline(
+                data_loader=self.data_loader,
+                config_dict=config_dict,
+                files_to_process=files_to_process,
+                features=features,
+                patch_size=p_size,
+                save_viz=save_viz
             )
+            
+            return self.generation_results
             
         except Exception as e:
             generation_time = time.time() - start_time
@@ -554,148 +369,11 @@ class SAR2HeightPipeline:
                 total_patches_generated=0,
                 output_files=[],
                 generation_time=generation_time,
-                failed_files=[]
+                failed_files=[],
+                error=error_msg
             )
             
             return self.generation_results
-    
-    def _process_with_multiprocessing(self, files_to_process, features, patch_size, save_viz, n_workers,
-                                    output_files, stats, failed_files):
-        """Process files using multiprocessing."""
-        print(f"🔄 Starting multiprocessing with {n_workers} workers...")
-        
-        # Prepare arguments for worker processes
-        config_dict = self.config.__dict__.copy()  # Convert to dict for serialization
-        file_pairs_info = [self.data_loader.file_pairs[i] for i in files_to_process]
-        
-        worker_args = [
-            (i, config_dict, file_pairs_info, features, patch_size, save_viz) 
-            for i in files_to_process
-        ]
-        
-        # Track progress - add skipped_files counter
-        completed = 0
-        skipped_files = 0
-        start_time = time.time()
-        
-        # Use ProcessPoolExecutor for better control and error handling
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            # Submit all jobs
-            future_to_index = {
-                executor.submit(_process_file_pair_worker, args): args[0] 
-                for args in worker_args
-            }
-            
-            # Process completed jobs as they finish
-            for future in as_completed(future_to_index):
-                pair_index = future_to_index[future]
-                completed += 1
-                
-                try:
-                    result = future.result()
-                    pair_name = result['pair_name']
-                    
-                    # Update progress
-                    elapsed = time.time() - start_time
-                    eta = elapsed * (len(files_to_process) - completed) / completed if completed > 0 else 0
-                    progress = completed / len(files_to_process) * 100
-                    
-                    print(f"\n🔄 [{completed}/{len(files_to_process)}] ({progress:.1f}%) {pair_name}")
-                    print(f"    ETA: {eta:.0f}s | Elapsed: {elapsed:.0f}s")
-                    
-                    if result['success']:
-                        # Check if file was skipped or actually processed
-                        if result.get('error') == 'SKIPPED - Output file exists and override_existing=False':
-                            skipped_files += 1
-                            print(f"    ⏭️  Skipped (file exists)")
-                        else:
-                            stats['successful_files'] += 1
-                            stats['total_patches_generated'] += result['n_patches_generated']
-                            print(f"    ✅ Success: {result['n_patches_generated']} patches")
-                            print(f"    ⏱️  Processing: {result['processing_time']:.1f}s")
-                        
-                        # Add output files regardless of skip status
-                        if result['output_files']:
-                            output_files.extend(result['output_files'].values())
-                            
-                            # Show output files
-                            for file_type, file_path in result['output_files'].items():
-                                try:
-                                    file_size = Path(file_path).stat().st_size / (1024*1024)  # MB
-                                    print(f"    💾 Output: {Path(file_path).name} ({file_size:.1f} MB)")
-                                except:
-                                    print(f"    💾 Output: {Path(file_path).name}")
-                    else:
-                        failed_files.append(pair_name)
-                        error_msg = result['error'] or "Unknown error"
-                        print(f"    ❌ Failed: {error_msg[:80]}..." if len(error_msg) > 80 else f"    ❌ Failed: {error_msg}")
-                        
-                except Exception as e:
-                    pair_name = f"pair_{pair_index}"
-                    failed_files.append(pair_name)
-                    print(f"\n❌ Critical error processing {pair_name}: {str(e)[:80]}...")
-        
-        # Store skipped count in stats for access by calling method
-        stats['skipped_files'] = skipped_files
-        print(f"\n✅ Multiprocessing completed in {time.time() - start_time:.1f}s")
-    
-    def _process_sequentially(self, files_to_process, features, patch_size, save_viz,
-                            output_files, stats, failed_files):
-        """Process files sequentially (original behavior)."""
-        print("🔄 Processing files sequentially...")
-        
-        # Import processing modules
-        from coregistration import coregister_file_pair
-        from feature_extraction import SARFeatureExtractor
-        from patch_generation import generate_all_patches_from_data
-        from netcdf_writer import save_all_patches_to_directory
-        
-        skipped_files = 0
-        
-        for i, pair_idx in enumerate(files_to_process):
-            pair_name = self.data_loader.file_pairs[pair_idx]['base_name']
-            print(f"\n🔄 Processing {i+1}/{len(files_to_process)}: {pair_name}")
-            
-            try:
-                result = self._process_single_file_pair(
-                    pair_idx, coregister_file_pair, SARFeatureExtractor, 
-                    generate_all_patches_from_data, save_all_patches_to_directory,
-                    features, patch_size, save_viz
-                )
-                
-                if result['success']:
-                    # Check if file was skipped or actually processed
-                    if result.get('error') == 'SKIPPED - Output file exists and override_existing=False':
-                        skipped_files += 1
-                        print(f"  ⏭️  Skipped (file exists)")
-                    else:
-                        stats['successful_files'] += 1
-                        stats['total_patches_generated'] += result['n_patches_generated']
-                        print(f"  ✅ Success: {result['n_patches_generated']} patches saved")
-                        print(f"     Processing time: {result['processing_time']:.1f}s")
-                    
-                    # Add output files regardless of skip status
-                    if result['output_files']:
-                        output_files.extend(result['output_files'].values())
-                        
-                        # Show output files
-                        for file_type, file_path in result['output_files'].items():
-                            try:
-                                file_size = Path(file_path).stat().st_size / (1024*1024)  # MB
-                                print(f"     Output: {Path(file_path).name} ({file_size:.1f} MB)")
-                            except:
-                                print(f"     Output: {Path(file_path).name}")
-                else:
-                    failed_files.append(pair_name)
-                    error_msg = result['error']
-                    print(f"  ❌ Failed: {error_msg[:100]}..." if len(error_msg) > 100 else f"  ❌ Failed: {error_msg}")
-                    
-            except Exception as e:
-                failed_files.append(pair_name)
-                print(f"  ❌ Critical error: {str(e)[:100]}..." if len(str(e)) > 100 else f"  ❌ Critical error: {str(e)}")
-        
-        # Store skipped count in stats for access by calling method
-        stats['skipped_files'] = skipped_files
     
     def filter_patches(self, 
                       full_patches_list: Optional[List[str]] = None,
@@ -837,103 +515,6 @@ class SAR2HeightPipeline:
             )
             
             return self.filtering_results
-    
-    def _process_single_file_pair(self, pair_index, coregister_func, extractor_class, 
-                                 generate_func, save_func, features, patch_size, save_viz):
-        """Process a single file pair for patch generation."""
-        pair_info = self.data_loader.file_pairs[pair_index]
-        base_name = pair_info['base_name']
-        aoi_info = pair_info['aoi']
-        
-        start_time = time.time()
-        result = {
-            'success': False,
-            'error': None,
-            'n_patches_generated': 0,
-            'output_files': {},
-            'processing_time': 0
-        }
-        
-        try:
-            # Check if output file already exists and skip if override is False
-            existing_files = list(Path(self.config.full_patches_dir).glob(f"full_patches_{base_name}_*patches.nc"))
-            
-            if existing_files and not self.config.override_existing:
-                existing_file = existing_files[0]  # Take the first match
-                logger.info(f"⏭️  Skipping {base_name} - output file already exists: {existing_files[0].name}")
-                result['success'] = True
-                result['n_patches_generated'] = 0  # We didn't generate, but file exists
-                result['output_files'] = {'full_patches': str(existing_file)}
-                result['processing_time'] = time.time() - start_time
-                result['error'] = 'SKIPPED - Output file exists and override_existing=False'
-                return result
-            
-            # Step 1: Load data
-            logger.info(f"Loading data for {base_name}")
-            intensity_data, dsm_data, intensity_meta, dsm_meta = self.data_loader.load_file_pair(pair_index)
-            
-            # Step 2: Coregister data
-            logger.info(f"Coregistering data for {base_name}")
-            intensity_coreg, dsm_coreg, common_meta = coregister_func(
-                intensity_data, dsm_data, intensity_meta, dsm_meta
-            )
-            
-            # Step 3: Extract features using refactored SARFeatureExtractor
-            logger.info(f"Extracting features for {base_name}")
-            feature_extractor = extractor_class()
-            feature_data, feature_names = feature_extractor.extract_selected_features(
-                intensity_coreg, selected_features=features, metadata=common_meta
-            )
-            
-            # Step 4: Generate patches
-            logger.info(f"Generating patches for {base_name}")
-            all_patches = generate_func(
-                features=feature_data,
-                dsm=dsm_coreg,
-                metadata=common_meta,
-                patch_size=patch_size,
-                stride=None
-            )
-            
-            result['n_patches_generated'] = len(all_patches)
-            
-            if not all_patches:
-                result['error'] = "No patches could be generated (insufficient data size)"
-                return result
-            
-            # Step 5: Save patches
-            logger.info(f"Saving patches for {base_name}")
-            source_metadata = {
-                'aoi_info': aoi_info,
-                'original_intensity_shape': intensity_data.shape,
-                'original_dsm_shape': dsm_data.shape,
-                'coregistered_shape': intensity_coreg.shape,
-                'n_features_extracted': len(feature_names),
-                'patch_size': patch_size
-            }
-            
-            output_file = save_func(
-                patches=all_patches,
-                output_dir=self.config.full_patches_dir,
-                feature_names=feature_names,
-                base_name=base_name,
-                source_metadata=source_metadata,
-                global_attrs={
-                    'processing_date': datetime.now().isoformat(),
-                    'enabled_features': ','.join(features),
-                    'filtering_applied': False
-                }
-            )
-            
-            result['output_files'] = {'full_patches': output_file}
-            result['success'] = True
-            result['processing_time'] = time.time() - start_time
-            
-        except Exception as e:
-            result['error'] = str(e)
-            result['processing_time'] = time.time() - start_time
-        
-        return result
     
     def get_pipeline_summary(self) -> Dict[str, Any]:
         """Get comprehensive pipeline processing summary."""
