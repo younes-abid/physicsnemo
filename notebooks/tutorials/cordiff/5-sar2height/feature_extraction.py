@@ -5,7 +5,7 @@ This module provides comprehensive feature extraction from SAR intensity data
 to create enriched multi-channel input for the cordiff training pipeline.
 
 Author: AI Assistant
-Date: 2026-01-06
+Date: 2026-01-07
 """
 
 import numpy as np
@@ -13,6 +13,9 @@ import cv2
 from scipy import ndimage
 from scipy.ndimage import uniform_filter, generic_filter
 from skimage import filters
+import time
+from functools import wraps
+from typing import List, Tuple, Dict, Optional, Union
 
 # Handle different scikit-image versions and import paths
 GLCM_AVAILABLE = False
@@ -44,10 +47,21 @@ try:
 except ImportError:
     RANK_FILTERS_AVAILABLE = False
 
-from typing import List, Tuple, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def timing_decorator(func):
+    """Decorator to time function execution."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        logger.info(f"⏱️  {func.__name__} took {end_time - start_time:.2f}s")
+        return result
+    return wrapper
 
 
 class SARFeatureExtractor:
@@ -59,111 +73,205 @@ class SARFeatureExtractor:
     - Apply speckle filtering (Lee filter)
     - Compute texture features (GLCM, local statistics)
     - Compute edge and gradient features
-    - Stack all features into multi-channel arrays
+    - Extract only selected features for performance optimization
     """
     
     def __init__(self):
         """Initialize the feature extractor."""
-        self.feature_names = []
         self.alpha_power = 0.3  # Power transform parameter
         
-    def extract_all_features(self, intensity_db: np.ndarray, 
-                           metadata: Optional[Dict] = None) -> Tuple[np.ndarray, List[str]]:
+    def extract_selected_features(self, 
+                                intensity: np.ndarray, 
+                                selected_features: List[str],
+                                metadata: Optional[Dict] = None,
+                                timing: bool = True) -> Tuple[np.ndarray, List[str]]:
         """
-        Extract all features from SAR intensity data.
+        Extract only selected features for efficiency.
         
         Args:
-            intensity_db (np.ndarray): SAR intensity in dB
-            metadata (Dict, optional): Metadata that might contain incidence angle
+            intensity: SAR intensity data
+            selected_features: List of feature names to extract
+            metadata: Optional metadata
+            timing: Whether to monitor and log timing information (for internal logging only)
             
         Returns:
             Tuple containing:
-            - features_stack: Multi-channel feature array (channels, height, width)
-            - feature_names: List of feature names corresponding to channels
+            - features (np.ndarray): Feature array (n_features, height, width)
+            - feature_names (List[str]): Names of extracted features
         """
-        logger.info(f"Extracting features from intensity data: {intensity_db.shape}")
+        timing_info = {} if timing else None
+        start_total = time.time() if timing else None
         
+        logger.info(f"Extracting {len(selected_features)} selected features: {selected_features}")
+        
+        available_features = self._get_available_features()
+        
+        # Validate selected features
+        invalid_features = [f for f in selected_features if f not in available_features]
+        if invalid_features:
+            raise ValueError(f"Invalid features requested: {invalid_features}. "
+                           f"Available: {list(available_features.keys())}")
+        
+        # Extract only the selected features
         features = []
         feature_names = []
         
-        # 1. Original intensity values (dB)
-        features.append(intensity_db)
-        feature_names.append('intensity_db')
+        for feature_name in selected_features:
+            if timing:
+                start_feature = time.time()
+            
+            feature_func = available_features[feature_name]
+            try:
+                if feature_name in ['incidence_angle'] and metadata:
+                    feature_data = feature_func(intensity, metadata)
+                else:
+                    feature_data = feature_func(intensity)
+                    
+                features.append(feature_data)
+                feature_names.append(feature_name)
+                
+                if timing:
+                    feature_time = time.time() - start_feature
+                    timing_info[f"feature_{feature_name}"] = feature_time
+                    logger.info(f"⏱️  Extracted '{feature_name}' in {feature_time:.2f}s")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract feature {feature_name}: {e}")
+                if timing:
+                    timing_info[f"feature_{feature_name}_failed"] = time.time() - start_feature
         
-        # 2. Percentile rescaled (2-98th percentile)
-        percentile_rescaled = self._percentile_rescale(intensity_db)
-        features.append(percentile_rescaled)
-        feature_names.append('intensity_percentile_rescaled')
+        if not features:
+            raise RuntimeError("No features were successfully extracted")
         
-        # 3. Linear intensity (10^(dB/10))
+        # Stack features
+        features = np.stack(features, axis=0)
+        
+        if timing:
+            timing_info['total_extraction'] = time.time() - start_total
+            logger.info(f"✅ Total feature extraction completed in {timing_info['total_extraction']:.2f}s")
+        
+        logger.info(f"Extracted {len(features)} selected features: {feature_names}")
+        return features, feature_names
+
+    def _get_available_features(self) -> Dict[str, callable]:
+        """Get dictionary of available feature extraction functions."""
+        return {
+            'intensity_db': self._extract_db_intensity,
+            'intensity_percentile_rescaled': self._extract_percentile_rescaled,
+            'intensity_linear': self._extract_linear_intensity,
+            'intensity_sqrt_linear': self._extract_sqrt_linear,
+            'intensity_power_transform': self._extract_power_transform,
+            'intensity_lee_filtered': self._extract_lee_filtered,
+            'local_mean_5x5': self._extract_local_mean_5x5,
+            'local_std_5x5': self._extract_local_std_5x5,
+            'sobel_magnitude': self._extract_sobel_magnitude,
+            'sobel_direction': self._extract_sobel_direction,
+            'texture_contrast': self._extract_texture_contrast,
+            'texture_homogeneity': self._extract_texture_homogeneity,
+            'local_mean_3x3': self._extract_local_mean_3x3,
+            'local_mean_7x7': self._extract_local_mean_7x7,
+            'gradient_magnitude': self._extract_gradient_magnitude,
+            'incidence_angle': self._extract_incidence_angle_feature,
+            'local_range': self._extract_local_range
+        }
+    
+    # Individual feature extraction methods with timing
+    @timing_decorator
+    def _extract_db_intensity(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract original intensity values (dB)."""
+        return intensity_db
+    
+    @timing_decorator
+    def _extract_percentile_rescaled(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract percentile rescaled (2-98th percentile)."""
+        return self._percentile_rescale(intensity_db)
+    
+    @timing_decorator
+    def _extract_linear_intensity(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract linear intensity (10^(dB/10))."""
+        return self._db_to_linear(intensity_db)
+    
+    @timing_decorator
+    def _extract_sqrt_linear(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract square root of linear intensity."""
         linear_intensity = self._db_to_linear(intensity_db)
-        features.append(linear_intensity)
-        feature_names.append('intensity_linear')
-        
-        # 4. Square root of linear intensity
-        sqrt_linear = np.sqrt(np.maximum(linear_intensity, 0))  # Ensure non-negative
-        features.append(sqrt_linear)
-        feature_names.append('intensity_sqrt_linear')
-        
-        # 5. Power transform (α=0.3)
-        power_transform = self._power_transform(intensity_db, self.alpha_power)
-        features.append(power_transform)
-        feature_names.append('intensity_power_transform')
-        
-        # 6. Speckle-filtered intensity (Lee filter)
-        lee_filtered = self._lee_filter(linear_intensity)
-        features.append(lee_filtered)
-        feature_names.append('intensity_lee_filtered')
-        
-        # 7. Local mean (5x5)
-        local_mean_5x5 = self._local_mean(intensity_db, window_size=5)
-        features.append(local_mean_5x5)
-        feature_names.append('local_mean_5x5')
-        
-        # 8. Local std (5x5)
-        local_std_5x5 = self._local_std(intensity_db, window_size=5)
-        features.append(local_std_5x5)
-        feature_names.append('local_std_5x5')
-        
-        # 9. Sobel magnitude and direction
-        sobel_mag, sobel_dir = self._sobel_features(intensity_db)
-        features.extend([sobel_mag, sobel_dir])
-        feature_names.extend(['sobel_magnitude', 'sobel_direction'])
-        
-        # 10. GLCM contrast and homogeneity (or alternatives)
-        glcm_contrast, glcm_homogeneity = self._glcm_features(intensity_db)
-        features.extend([glcm_contrast, glcm_homogeneity])
-        feature_names.extend(['texture_contrast', 'texture_homogeneity'])
-        
-        # 11. Multi-scale mean (3x3, 7x7)
-        local_mean_3x3 = self._local_mean(intensity_db, window_size=3)
-        local_mean_7x7 = self._local_mean(intensity_db, window_size=7)
-        features.extend([local_mean_3x3, local_mean_7x7])
-        feature_names.extend(['local_mean_3x3', 'local_mean_7x7'])
-        
-        # 12. Gradient magnitude
-        gradient_mag = self._gradient_magnitude(intensity_db)
-        features.append(gradient_mag)
-        feature_names.append('gradient_magnitude')
-        
-        # 13. Local incidence angle (if available) or local range
+        return np.sqrt(np.maximum(linear_intensity, 0))
+    
+    @timing_decorator
+    def _extract_power_transform(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract power transform (α=0.3)."""
+        return self._power_transform(intensity_db, self.alpha_power)
+    
+    @timing_decorator
+    def _extract_lee_filtered(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract speckle-filtered intensity (Lee filter)."""
+        linear_intensity = self._db_to_linear(intensity_db)
+        return self._lee_filter(linear_intensity)
+    
+    @timing_decorator
+    def _extract_local_mean_5x5(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract local mean (5x5)."""
+        return self._local_mean(intensity_db, window_size=5)
+    
+    @timing_decorator
+    def _extract_local_std_5x5(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract local std (5x5)."""
+        return self._local_std(intensity_db, window_size=5)
+    
+    @timing_decorator
+    def _extract_sobel_magnitude(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract Sobel magnitude."""
+        sobel_mag, _ = self._sobel_features(intensity_db)
+        return sobel_mag
+    
+    @timing_decorator
+    def _extract_sobel_direction(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract Sobel direction."""
+        _, sobel_dir = self._sobel_features(intensity_db)
+        return sobel_dir
+    
+    @timing_decorator
+    def _extract_texture_contrast(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract GLCM contrast (or alternative)."""
+        contrast, _ = self._glcm_features(intensity_db)
+        return contrast
+    
+    @timing_decorator
+    def _extract_texture_homogeneity(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract GLCM homogeneity (or alternative)."""
+        _, homogeneity = self._glcm_features(intensity_db)
+        return homogeneity
+    
+    @timing_decorator
+    def _extract_local_mean_3x3(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract local mean (3x3)."""
+        return self._local_mean(intensity_db, window_size=3)
+    
+    @timing_decorator
+    def _extract_local_mean_7x7(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract local mean (7x7)."""
+        return self._local_mean(intensity_db, window_size=7)
+    
+    @timing_decorator
+    def _extract_gradient_magnitude(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract gradient magnitude."""
+        return self._gradient_magnitude(intensity_db)
+    
+    @timing_decorator
+    def _extract_incidence_angle_feature(self, intensity_db: np.ndarray, metadata: Optional[Dict] = None) -> np.ndarray:
+        """Extract local incidence angle (if available)."""
         if metadata and self._has_incidence_angle(metadata):
-            incidence_angle = self._extract_incidence_angle(metadata, intensity_db.shape)
-            features.append(incidence_angle)
-            feature_names.append('incidence_angle')
+            return self._extract_incidence_angle(metadata, intensity_db.shape)
         else:
-            # Use local range as alternative
-            local_range = self._local_range(intensity_db, window_size=5)
-            features.append(local_range)
-            feature_names.append('local_range')
-        
-        # Stack all features
-        features_stack = np.stack(features, axis=0)
-        
-        logger.info(f"Extracted {features_stack.shape[0]} features: {features_stack.shape}")
-        
-        self.feature_names = feature_names
-        return features_stack, feature_names
+            logger.warning("No incidence angle metadata available, using default value")
+            return np.full(intensity_db.shape, 30.0, dtype=np.float32)
+    
+    @timing_decorator
+    def _extract_local_range(self, intensity_db: np.ndarray) -> np.ndarray:
+        """Extract local range."""
+        return self._local_range(intensity_db, window_size=5)
+
+    # ...existing code for helper methods...
     
     def _percentile_rescale(self, data: np.ndarray, 
                           lower_percentile: float = 2, 
@@ -463,68 +571,198 @@ class SARFeatureExtractor:
         return normalized_features, norm_params
 
 
-def extract_sar_features(intensity_db: np.ndarray, 
-                        metadata: Optional[Dict] = None) -> Tuple[np.ndarray, List[str]]:
+# Public API Functions
+
+def get_available_feature_names() -> List[str]:
     """
-    Convenience function to extract all SAR features.
+    Get list of all available feature names.
     
-    Args:
-        intensity_db (np.ndarray): SAR intensity in dB
-        metadata (Dict, optional): Metadata dictionary
-        
     Returns:
-        Tuple containing feature stack and feature names
+        List[str]: Available feature names that can be used with extract_selected_sar_features()
     """
-    extractor = SARFeatureExtractor()
-    return extractor.extract_all_features(intensity_db, metadata)
+    return [
+        'intensity_db',
+        'intensity_percentile_rescaled', 
+        'intensity_linear',
+        'intensity_sqrt_linear',
+        'intensity_power_transform',
+        'intensity_lee_filtered',
+        'local_mean_5x5',
+        'local_std_5x5',
+        'sobel_magnitude',
+        'sobel_direction',
+        'texture_contrast',
+        'texture_homogeneity',
+        'local_mean_3x3',
+        'local_mean_7x7',
+        'gradient_magnitude',
+        'incidence_angle',
+        'local_range'
+    ]
 
 
-def extract_selected_sar_features(intensity_db: np.ndarray, 
-                                 enabled_features: List[str],
-                                 metadata: Optional[Dict] = None) -> Tuple[np.ndarray, List[str]]:
+def extract_selected_sar_features(intensity_data: np.ndarray,
+                                selected_features: List[str],
+                                metadata: Optional[Dict] = None,
+                                normalize: bool = False,
+                                normalization_method: str = 'standard',
+                                timing: bool = True) -> Union[Tuple[np.ndarray, List[str]], 
+                                                             Tuple[np.ndarray, List[str], Dict]]:
     """
-    Extract only the selected SAR features from the enabled features list.
+    Extract only selected SAR features from intensity data for efficiency.
+    
+    This function only computes the features that are actually needed,
+    saving significant computation time compared to extracting all features.
     
     Args:
-        intensity_db (np.ndarray): SAR intensity in dB
-        enabled_features (List[str]): List of feature names to extract
-        metadata (Dict, optional): Metadata dictionary
-        
+        intensity_data (np.ndarray): SAR intensity data in dB (2D array)
+        selected_features (List[str]): List of feature names to extract
+        metadata (Dict, optional): Metadata for feature extraction
+        normalize (bool): Whether to normalize features
+        normalization_method (str): Normalization method ('standard', 'minmax', 'robust')
+        timing (bool): Whether to monitor and log timing information
+    
     Returns:
         Tuple containing:
-        - selected_features: Feature stack with only enabled features (selected_features, height, width)
-        - selected_names: List of selected feature names
+        - features (np.ndarray): Selected feature array (n_features, height, width)
+        - feature_names (List[str]): Names of extracted features
+    
+    Raises:
+        ValueError: If invalid feature names are provided
     """
-    # Get all features first
-    all_features, all_names = extract_sar_features(intensity_db, metadata)
+    logger.info(f"🔄 Starting feature extraction for {len(selected_features)} features")
     
-    # Filter to only enabled features
-    selected_indices = []
-    selected_names = []
+    extractor = SARFeatureExtractor()
     
-    for name in enabled_features:
-        if name in all_names:
-            idx = all_names.index(name)
-            selected_indices.append(idx)
-            selected_names.append(name)
-        else:
-            logger.warning(f"Feature '{name}' not found in extracted features. Available: {all_names}")
+    if timing:
+        features, feature_names = extractor.extract_selected_features(
+            intensity_data, selected_features, metadata, timing=True
+        )
+    else:
+        features, feature_names = extractor.extract_selected_features(
+            intensity_data, selected_features, metadata, timing=False
+        )
     
-    if not selected_indices:
-        raise ValueError(f"No valid features selected! Available features: {all_names}")
+    if normalize:
+        if timing:
+            norm_start = time.time()
+        features, _ = extractor.normalize_features(features, method=normalization_method)
+        if timing:
+            timing_info['normalization'] = time.time() - norm_start
+            logger.info(f"⏱️  Feature normalization took {timing_info['normalization']:.2f}s")
     
-    # Extract selected features
-    selected_features = all_features[selected_indices]
+    # Log timing summary
+    if timing:
+        logger.info(f"📊 Feature extraction timing summary:")
+        feature_times = [(k.replace('feature_', ''), v) for k, v in timing_info.items() 
+                        if k.startswith('feature_') and not k.endswith('_failed')]
+        feature_times.sort(key=lambda x: x[1], reverse=True)
+        
+        for feature_name, timing_val in feature_times:
+            logger.info(f"   {feature_name}: {timing_val:.2f}s")
+        logger.info(f"   ✅ Total: {timing_info.get('total_extraction', 0):.2f}s")
+        
+        return features, feature_names, timing_info
     
-    logger.info(f"Selected {len(selected_features)} features from {len(all_features)} total: {selected_names}")
+    return features, feature_names
+
+
+def get_default_feature_set() -> List[str]:
+    """
+    Get a default set of features that provide good performance/quality balance.
     
-    return selected_features, selected_names
+    Returns:
+        List[str]: Default feature names optimized for most SAR-to-height tasks
+    """
+    return [
+        'intensity_db',
+        'intensity_percentile_rescaled', 
+        'intensity_linear',
+        'intensity_sqrt_linear',
+        'intensity_power_transform',
+        'intensity_lee_filtered',
+        'local_mean_5x5',
+        'local_std_5x5'
+    ]
+
+
+def get_texture_feature_set() -> List[str]:
+    """
+    Get texture-focused feature set.
+    
+    Returns:
+        List[str]: Feature names focused on texture analysis
+    """
+    return [
+        'intensity_db',
+        'local_mean_3x3',
+        'local_mean_5x5',
+        'local_mean_7x7',
+        'local_std_5x5',
+        'texture_contrast',
+        'texture_homogeneity',
+        'local_range'
+    ]
+
+
+def get_edge_feature_set() -> List[str]:
+    """
+    Get edge and gradient focused feature set.
+    
+    Returns:
+        List[str]: Feature names focused on edge detection
+    """
+    return [
+        'intensity_db',
+        'sobel_magnitude',
+        'sobel_direction', 
+        'gradient_magnitude',
+        'intensity_lee_filtered'
+    ]
+
+
+def get_minimal_feature_set() -> List[str]:
+    """
+    Get minimal feature set for fastest processing.
+    
+    Returns:
+        List[str]: Minimal feature set for quick processing
+    """
+    return [
+        'intensity_db',
+        'intensity_linear',
+        'local_mean_5x5',
+        'local_std_5x5'
+    ]
 
 
 if __name__ == "__main__":
-    # Example usage
+    # Example usage demonstrating the refactored approach
+    print("🧪 Testing optimized feature extraction...")
     dummy_intensity = np.random.randn(100, 100) * 10 - 20
-    features, names = extract_sar_features(dummy_intensity)
-    print(f"Extracted {features.shape[0]} features:")
-    for i, name in enumerate(names):
-        print(f"  {i}: {name} - shape: {features[i].shape}")
+    
+    # Get all available features
+    all_features = get_available_feature_names()
+    print(f"📋 Available features ({len(all_features)}): {all_features}")
+    
+    # Test with default feature set
+    print("\n🔧 Testing default feature set...")
+    default_features = get_default_feature_set()
+    features, names, timing_info = extract_selected_sar_features(
+        dummy_intensity, default_features, timing=True
+    )
+    print(f"✅ Extracted {features.shape[0]} default features in {timing_info['total_extraction']:.2f}s")
+    
+    # Test with all features (equivalent to old extract_all_features)
+    print("\n🔧 Testing all features extraction...")
+    all_features_data, all_names, all_timing = extract_selected_sar_features(
+        dummy_intensity, all_features, timing=True
+    )
+    print(f"✅ Extracted ALL {all_features_data.shape[0]} features in {all_timing['total_extraction']:.2f}s")
+    
+    # Demonstrate feature set helpers
+    print(f"\n📊 Feature set options:")
+    print(f"   Default ({len(get_default_feature_set())}): {get_default_feature_set()}")
+    print(f"   Texture ({len(get_texture_feature_set())}): {get_texture_feature_set()}")
+    print(f"   Edge ({len(get_edge_feature_set())}): {get_edge_feature_set()}")
+    print(f"   Minimal ({len(get_minimal_feature_set())}): {get_minimal_feature_set()}")

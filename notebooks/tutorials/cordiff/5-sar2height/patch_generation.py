@@ -2,15 +2,19 @@
 Patch Generation Module for SAR-to-Height Data Processing
 
 This module provides functionality to create patches from coregistered SAR and DSM data
-for the cordiff training pipeline, ensuring 432x432 patch size compatibility.
+for the cordiff training pipeline. It generates ALL patches without filtering and preserves
+complete spatial and quality information for later processing.
 
 Author: AI Assistant
-Date: 2026-01-06
+Date: 2026-01-07
 """
 
 import numpy as np
 from typing import List, Tuple, Dict, Optional, Generator
 import logging
+from shapely.geometry import Polygon
+import rasterio
+from rasterio.transform import Affine
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +26,8 @@ class PatchGenerator:
     This class provides methods to:
     - Create non-overlapping patches of specified size
     - Handle edge cases and padding
-    - Extract patch metadata (AOI bounds)
-    - Validate patch quality
+    - Extract complete patch metadata including spatial bounds and CRS
+    - Calculate raw quality metrics without filtering
     """
     
     def __init__(self, patch_size: int = 432, stride: Optional[int] = None):
@@ -101,12 +105,12 @@ class PatchGenerator:
         
         return patch
     
-    def generate_patches(self, 
-                        features: np.ndarray, 
-                        dsm: np.ndarray, 
-                        metadata: Dict) -> Generator[Dict, None, None]:
+    def generate_all_patches(self, 
+                           features: np.ndarray, 
+                           dsm: np.ndarray, 
+                           metadata: Dict) -> Generator[Dict, None, None]:
         """
-        Generate patches from feature stack and DSM data.
+        Generate ALL patches from feature stack and DSM data without any filtering.
         
         Args:
             features (np.ndarray): Multi-channel feature array (channels, height, width)
@@ -114,7 +118,7 @@ class PatchGenerator:
             metadata (Dict): Metadata containing spatial information
             
         Yields:
-            Dict: Patch information containing features, dsm, bounds, and quality metrics
+            Dict: Patch information with complete spatial and quality metadata
         """
         if features.shape[1:] != dsm.shape:
             raise ValueError(f"Feature and DSM shapes don't match: {features.shape[1:]} vs {dsm.shape}")
@@ -129,24 +133,29 @@ class PatchGenerator:
                 feature_patch = self.extract_patch(features, row_start, col_start)
                 dsm_patch = self.extract_patch(dsm, row_start, col_start)
                 
-                # Calculate patch bounds in original coordinate system
-                patch_bounds = self._calculate_patch_bounds(
-                    row_start, col_start, metadata
-                )
+                # Calculate complete spatial information
+                spatial_info = self._calculate_spatial_info(row_start, col_start, metadata)
                 
-                # Calculate quality metrics
-                quality_metrics = self._assess_patch_quality(feature_patch, dsm_patch)
+                # Calculate raw quality metrics
+                quality_components = self._calculate_quality_components(feature_patch, dsm_patch)
                 
-                # Create patch dictionary
+                # Create comprehensive patch dictionary
                 patch_info = {
                     'patch_id': patch_id,
                     'features': feature_patch,
                     'dsm': dsm_patch,
-                    'bounds': patch_bounds,
                     'grid_position': (row_start, col_start),
-                    'quality': quality_metrics,
+                    'pixel_bounds': {
+                        'row_start': row_start,
+                        'row_end': row_start + self.patch_size,
+                        'col_start': col_start,
+                        'col_end': col_start + self.patch_size
+                    },
+                    'spatial_info': spatial_info,
+                    'quality_components': quality_components,
+                    'patch_size': self.patch_size,
                     'shape': feature_patch.shape,
-                    'aoi_info': metadata.get('aoi_info', {})
+                    'source_metadata': metadata.get('aoi_info', {})
                 }
                 
                 logger.debug(f"Generated patch {patch_id} at ({row_start}, {col_start})")
@@ -154,153 +163,164 @@ class PatchGenerator:
                 yield patch_info
                 patch_id += 1
     
-    def _calculate_patch_bounds(self, 
+    def _calculate_spatial_info(self, 
                               row_start: int, 
                               col_start: int, 
-                              metadata: Dict) -> Dict[str, float]:
+                              metadata: Dict) -> Dict:
         """
-        Calculate geographic bounds of a patch.
+        Calculate complete spatial information for a patch including CRS and polygon.
         
         Args:
             row_start (int): Starting row in pixel coordinates
             col_start (int): Starting column in pixel coordinates
-            metadata (Dict): Metadata containing transform information
+            metadata (Dict): Metadata containing transform and CRS information
             
         Returns:
-            Dict containing geographic bounds
+            Dict containing complete spatial information
         """
-        if 'transform' not in metadata:
-            # Return pixel coordinates if no transform available
-            return {
+        spatial_info = {
+            'crs': None,
+            'bounds': None,
+            'polygon_wkt': None,
+            'transform': None,
+            'has_geo_transform': False
+        }
+        
+        # Check if we have geospatial transform
+        if 'transform' in metadata and metadata['transform'] is not None:
+            transform = metadata['transform']
+            crs = metadata.get('crs', None)
+            
+            # Calculate corner coordinates in the CRS
+            x_min = transform.c + col_start * transform.a
+            y_max = transform.f + row_start * transform.e
+            x_max = transform.c + (col_start + self.patch_size) * transform.a
+            y_min = transform.f + (row_start + self.patch_size) * transform.e
+            
+            # Ensure proper ordering
+            if transform.e < 0:  # Standard case where y decreases with row
+                y_min, y_max = y_max, y_min
+            
+            # Create bounds dictionary
+            bounds = {
+                'left': min(x_min, x_max),
+                'bottom': min(y_min, y_max),
+                'right': max(x_min, x_max),
+                'top': max(y_min, y_max)
+            }
+            
+            # Create polygon geometry
+            polygon = Polygon([
+                (bounds['left'], bounds['bottom']),
+                (bounds['right'], bounds['bottom']),
+                (bounds['right'], bounds['top']),
+                (bounds['left'], bounds['top']),
+                (bounds['left'], bounds['bottom'])
+            ])
+            
+            spatial_info.update({
+                'crs': crs,
+                'bounds': bounds,
+                'polygon_wkt': polygon.wkt,
+                'transform': transform,
+                'has_geo_transform': True
+            })
+            
+        else:
+            # Use pixel coordinates as fallback
+            bounds = {
                 'left': col_start,
                 'bottom': row_start + self.patch_size,
                 'right': col_start + self.patch_size,
-                'top': row_start,
-                'pixel_bounds': True
+                'top': row_start
             }
-        
-        transform = metadata['transform']
-        
-        # Calculate corner coordinates
-        left = transform.c + col_start * transform.a
-        top = transform.f + row_start * transform.e
-        right = transform.c + (col_start + self.patch_size) * transform.a
-        bottom = transform.f + (row_start + self.patch_size) * transform.e
-        
-        # Ensure proper ordering (left < right, bottom < top for geographic coords)
-        if transform.e < 0:  # Standard case where y decreases with row
-            top, bottom = bottom, top
-        
-        return {
-            'left': min(left, right),
-            'bottom': min(bottom, top),
-            'right': max(left, right),
-            'top': max(bottom, top),
-            'pixel_bounds': False
-        }
+            
+            polygon = Polygon([
+                (bounds['left'], bounds['bottom']),
+                (bounds['right'], bounds['bottom']),
+                (bounds['right'], bounds['top']),
+                (bounds['left'], bounds['top']),
+                (bounds['left'], bounds['bottom'])
+            ])
+            
+            spatial_info.update({
+                'bounds': bounds,
+                'polygon_wkt': polygon.wkt,
+                'has_geo_transform': False
+            })
+            
+        return spatial_info
     
-    def _assess_patch_quality(self, 
-                            feature_patch: np.ndarray, 
-                            dsm_patch: np.ndarray) -> Dict[str, float]:
+    def _calculate_quality_components(self, 
+                                    feature_patch: np.ndarray, 
+                                    dsm_patch: np.ndarray) -> Dict:
         """
-        Assess the quality of a patch based on data completeness and statistics.
+        Calculate raw quality components without applying any filtering logic.
         
         Args:
             feature_patch (np.ndarray): Feature patch data
             dsm_patch (np.ndarray): DSM patch data
             
         Returns:
-            Dict containing quality metrics
+            Dict containing raw quality components
         """
-        quality = {}
+        components = {}
         
-        # Calculate valid data percentages
+        # Basic patch information
         total_pixels = dsm_patch.size
+        components['total_pixels'] = total_pixels
         
-        # DSM quality metrics
+        # DSM quality components
         dsm_valid = np.isfinite(dsm_patch)
-        dsm_valid_pct = np.sum(dsm_valid) / total_pixels * 100
+        dsm_valid_count = np.sum(dsm_valid)
+        dsm_valid_pct = (dsm_valid_count / total_pixels) * 100
         
-        quality['dsm_valid_percentage'] = dsm_valid_pct
-        quality['dsm_mean'] = np.nanmean(dsm_patch)
-        quality['dsm_std'] = np.nanstd(dsm_patch)
-        quality['dsm_range'] = np.nanmax(dsm_patch) - np.nanmin(dsm_patch)
+        components['dsm_valid_count'] = int(dsm_valid_count)
+        components['dsm_valid_percentage'] = float(dsm_valid_pct)
+        components['dsm_invalid_count'] = int(total_pixels - dsm_valid_count)
         
-        # Feature quality metrics
-        feature_valid_pct = []
-        for i in range(feature_patch.shape[0]):
-            channel_valid = np.isfinite(feature_patch[i])
-            channel_valid_pct = np.sum(channel_valid) / total_pixels * 100
-            feature_valid_pct.append(channel_valid_pct)
+        # DSM statistics (only for valid pixels)
+        if dsm_valid_count > 0:
+            valid_dsm = dsm_patch[dsm_valid]
+            components['dsm_mean'] = float(np.mean(valid_dsm))
+            components['dsm_std'] = float(np.std(valid_dsm))
+            components['dsm_min'] = float(np.min(valid_dsm))
+            components['dsm_max'] = float(np.max(valid_dsm))
+            components['dsm_range'] = float(np.max(valid_dsm) - np.min(valid_dsm))
+            components['dsm_median'] = float(np.median(valid_dsm))
+        else:
+            components['dsm_mean'] = 0.0
+            components['dsm_std'] = 0.0
+            components['dsm_min'] = 0.0
+            components['dsm_max'] = 0.0
+            components['dsm_range'] = 0.0
+            components['dsm_median'] = 0.0
         
-        quality['feature_valid_percentage_min'] = min(feature_valid_pct)
-        quality['feature_valid_percentage_mean'] = np.mean(feature_valid_pct)
+        # Feature quality components (per channel)
+        n_channels = feature_patch.shape[0]
+        feature_valid_counts = []
+        feature_valid_percentages = []
         
-        # Overall quality score (0-1, where 1 is best)
-        min_valid_pct = min(dsm_valid_pct, min(feature_valid_pct))
-        quality_score = min_valid_pct / 100.0
-        
-        # Penalize patches with very low variation (likely water or uniform areas)
-        if quality['dsm_std'] < 0.1:  # Very flat areas
-            quality_score *= 0.5
-        
-        quality['overall_quality'] = quality_score
-        quality['is_valid'] = quality_score > 0.7  # At least 70% valid data
-        
-        return quality
-    
-    def filter_valid_patches(self, 
-                           patches: List[Dict], 
-                           min_quality: float = 0.7,
-                           min_valid_pct: float = 70.0) -> List[Dict]:
-        """
-        Filter patches based on quality criteria.
-        1. Data Completeness (70% weight)
-                - Percentage of valid (non-NaN) pixels in SAR features
-                - Percentage of valid (non-NaN) pixels in DSM data
-                - Minimum of both percentages is used
-        2.  Terrain Variation (30% weight)
-            - DSM standard deviation > 0.1m (avoids flat areas)
-            - Patches with very low variation get 50% penalty
-            - Helps exclude water bodies, parking lots, etc.
-        Why 0.7 threshold?
-            - Ensures ≥70% valid pixels in training patches
-            - Filters out corrupted/incomplete data
-            - Maintains good terrain diversity
-            - Balances data quality vs. quantity
-         You can adjust this threshold by changing MIN_PATCH_QUALITY
-            Lower values = more patches (but potentially lower quality)
-            Higher values = fewer patches (but higher quality)
-        
-        Args:
-            patches (List[Dict]): List of patch dictionaries
-            min_quality (float): Minimum overall quality score
-            min_valid_pct (float): Minimum percentage of valid pixels
+        for i in range(n_channels):
+            channel_data = feature_patch[i]
+            channel_valid = np.isfinite(channel_data)
+            channel_valid_count = np.sum(channel_valid)
+            channel_valid_pct = (channel_valid_count / total_pixels) * 100
             
-        Returns:
-            List[Dict]: Filtered patches meeting quality criteria
-        """
-    
-             
-        valid_patches = []
+            feature_valid_counts.append(int(channel_valid_count))
+            feature_valid_percentages.append(float(channel_valid_pct))
         
-        for patch in patches:
-            quality = patch['quality']
-            
-            # Check quality criteria
-            passes_quality = quality['overall_quality'] >= min_quality
-            passes_valid_pct = quality['dsm_valid_percentage'] >= min_valid_pct
-            
-            if passes_quality and passes_valid_pct:
-                valid_patches.append(patch)
-            else:
-                logger.debug(f"Patch {patch['patch_id']} filtered out: "
-                           f"quality={quality['overall_quality']:.2f}, "
-                           f"valid_pct={quality['dsm_valid_percentage']:.1f}")
+        components['feature_valid_counts'] = feature_valid_counts
+        components['feature_valid_percentages'] = feature_valid_percentages
+        components['feature_valid_percentage_min'] = float(min(feature_valid_percentages))
+        components['feature_valid_percentage_max'] = float(max(feature_valid_percentages))
+        components['feature_valid_percentage_mean'] = float(np.mean(feature_valid_percentages))
         
-        logger.info(f"Filtered patches: {len(valid_patches)}/{len(patches)} passed quality criteria")
+        # Additional useful metrics for quality assessment
+        components['min_data_completeness'] = float(min(dsm_valid_pct, min(feature_valid_percentages)))
+        components['has_sufficient_variation'] = float(components['dsm_std']) > 0.1  # Can be used later for filtering
         
-        return valid_patches
+        return components
     
     def pad_data_if_needed(self, data: np.ndarray) -> Tuple[np.ndarray, bool]:
         """
@@ -346,25 +366,23 @@ class PatchGenerator:
         return padded_data, True
 
 
-def generate_patches_from_data(features: np.ndarray, 
-                             dsm: np.ndarray, 
-                             metadata: Dict,
-                             patch_size: int = 432,
-                             stride: Optional[int] = None,
-                             min_quality: float = 0.7) -> List[Dict]:
+def generate_all_patches_from_data(features: np.ndarray, 
+                                  dsm: np.ndarray, 
+                                  metadata: Dict,
+                                  patch_size: int = 432,
+                                  stride: Optional[int] = None) -> List[Dict]:
     """
-    Convenience function to generate patches from feature and DSM data.
+    Convenience function to generate ALL patches from feature and DSM data without filtering.
     
     Args:
         features (np.ndarray): Multi-channel feature array
         dsm (np.ndarray): DSM height data
-        metadata (Dict): Spatial metadata
+        metadata (Dict): Spatial metadata including CRS and transform
         patch_size (int): Patch size (default: 432)
         stride (int, optional): Stride between patches
-        min_quality (float): Minimum quality threshold
         
     Returns:
-        List[Dict]: List of valid patches
+        List[Dict]: List of ALL generated patches with complete metadata
     """
     generator = PatchGenerator(patch_size, stride)
     
@@ -375,13 +393,12 @@ def generate_patches_from_data(features: np.ndarray,
     if features_padded_flag or dsm_padded_flag:
         logger.info("Data was padded to meet minimum patch size requirements")
     
-    # Generate all patches
-    all_patches = list(generator.generate_patches(features_padded, dsm_padded, metadata))
+    # Generate ALL patches
+    all_patches = list(generator.generate_all_patches(features_padded, dsm_padded, metadata))
     
-    # Filter valid patches
-    valid_patches = generator.filter_valid_patches(all_patches, min_quality=min_quality)
+    logger.info(f"Generated {len(all_patches)} total patches (no filtering applied)")
     
-    return valid_patches
+    return all_patches
 
 
 if __name__ == "__main__":
@@ -389,17 +406,22 @@ if __name__ == "__main__":
     # Create dummy data
     dummy_features = np.random.randn(10, 500, 500)  # 10 channels, 500x500
     dummy_dsm = np.random.randn(500, 500)
-    dummy_metadata = {'transform': None}
+    dummy_metadata = {
+        'transform': None,
+        'crs': 'EPSG:4326',
+        'aoi_info': {'satellite': 'ICEYE'}
+    }
     
-    # Generate patches
-    patches = generate_patches_from_data(
+    # Generate ALL patches
+    patches = generate_all_patches_from_data(
         dummy_features, 
         dummy_dsm, 
         dummy_metadata,
         patch_size=432
     )
     
-    print(f"Generated {len(patches)} valid patches")
+    print(f"Generated {len(patches)} total patches")
     if patches:
         print(f"First patch shape: {patches[0]['features'].shape}")
-        print(f"First patch quality: {patches[0]['quality']['overall_quality']:.2f}")
+        print(f"First patch spatial info: {patches[0]['spatial_info']}")
+        print(f"First patch quality components: {patches[0]['quality_components']}")
