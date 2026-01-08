@@ -99,103 +99,77 @@ class QualityThresholds:
     min_data_completeness: float = 70.0
     min_dsm_range: float = 0.5
 
+
 def filter_netcdf_with_groups_fast(src_file, dst_file, quality_thresholds, selected_indices, existing_coverage=None):
     """
-    Simple and fast filtering function that preserves the original NetCDF structure.
-    Uses the same clean approach as the original NetCDF writer.
+    FINAL VERSION: Fast filtering with PROPER compression to match original file size.
+    Uses numpy for fast slicing + proper zlib compression.
     """
     
     logger = logging.getLogger(__name__)
     
-    # Simple compression settings (same as writer)
+    # Use SAME compression as original files (zlib=True, complevel=4)
     compression_opts = {'zlib': True, 'complevel': 4}
     
     start_time = time.time()
     n_filtered = len(selected_indices)
     
-    logger.info(f"Starting filtering: {n_filtered} patches to keep")
+    logger.info(f"🚀 Starting FINAL filtering: {n_filtered} patches")
+    logger.info(f"  Using zlib compression (complevel=4) to reduce file size")
     
     try:
         # Open files
-        open_start = time.time()
         src = nc.Dataset(src_file, 'r')
         dst = nc.Dataset(dst_file, 'w', format='NETCDF4')
-        logger.info(f"  File opening: {time.time() - open_start:.3f}s")
-        
-        # Copy global attributes
-        attr_start = time.time()
-        logger.info("  Copying global attributes...")
-        for attr_name in src.ncattrs():
-            try:
-                dst.setncattr(attr_name, src.getncattr(attr_name))
-                logger.info(f"    Copied global attribute: {attr_name}")
-            except:
-                logger.warning(f"  Could not copy global attribute: {attr_name}")
-        logger.info(f"  Global attributes: {time.time() - attr_start:.3f}s")
         
         # Copy dimensions
-        dim_start = time.time()
-        logger.info("  Copying dimensions...")
         dst.createDimension('sample', n_filtered)
         for dim_name, dim in src.dimensions.items():
             if dim_name != 'sample':
-                dst.createDimension(dim_name, len(dim) if not dim.isunlimited() else None)
-        logger.info(f"  Dimensions: {time.time() - dim_start:.3f}s")
+                dst.createDimension(dim_name, len(dim))
         
-        # Pre-convert indices for faster indexing
+        # Copy global attributes
+        for attr_name in src.ncattrs():
+            try:
+                dst.setncattr(attr_name, src.getncattr(attr_name))
+            except:
+                pass
+        
+        # Update filtering attributes
+        dst.setncattr('filtering_applied', 1)
+        dst.setncattr('patches_kept_after_filtering', n_filtered)
+        
+        # Convert indices to numpy array
         indices = np.array(selected_indices, dtype=np.int32)
         
-        # Copy variables (fast and simple)
-        var_start = time.time()
-        logger.info("  Copying variables...")
-        total_data = 0
-        
+        # Copy root variables
+        logger.info("📊 Copying root variables...")
         for var_name, var in src.variables.items():
-            # Create variable with same properties
-            dst_var = dst.createVariable(
-                var_name, 
-                var.dtype, 
-                var.dimensions,
-                **compression_opts
-            )
+            dst_var = dst.createVariable(var_name, var.dtype, var.dimensions, **compression_opts)
             
-            # Copy attributes
             for attr_name in var.ncattrs():
                 try:
                     dst_var.setncattr(attr_name, var.getncattr(attr_name))
-                    logger.info(f"    Copied attribute '{attr_name}' for variable '{var_name}'")
                 except:
-                    logger.warning(f"  Could not copy attribute '{attr_name}' for variable '{var_name}'")
+                    pass
             
-            # Copy data with filtering
-            if 'sample' in var.dimensions:
-                if var_name == 'sample':
-                    # Special case: sample index
-                    dst_var[:] = np.arange(n_filtered, dtype=var.dtype)
-                else:
-                    # Filtered data
-                    data = var[indices]
-                    dst_var[:] = data
-                    total_data += data.nbytes
+            if 'sample' in var.dimensions and var_name != 'sample':
+                dst_var[:] = var[indices]
+            elif var_name == 'sample':
+                dst_var[:] = np.arange(n_filtered, dtype=var.dtype)
             else:
-                # Non-filtered data
-                data = var[:]
-                dst_var[:] = data
-                total_data += data.nbytes
+                dst_var[:] = var[:]
         
-        logger.info(f"  Variables: {time.time() - var_start:.3f}s, "
-                   f"data: {total_data/1024/1024:.1f}MB")
-        
-        # Copy groups (simplified and fast)
-        groups_start = time.time()
-        logger.info("  Copying groups...")
+        # GROUP COPYING - Fast numpy slicing with compression
+        logger.info("🗂️ Copying groups with compression...")
         
         for group_name in ['input', 'output', 'patch_metadata']:
-            logger.info(f"    Processing group: {group_name}")
             if group_name not in src.groups:
                 continue
             
             group_start = time.time()
+            logger.info(f"  Processing group: {group_name}")
+            
             src_group = src.groups[group_name]
             dst_group = dst.createGroup(group_name)
             
@@ -203,79 +177,75 @@ def filter_netcdf_with_groups_fast(src_file, dst_file, quality_thresholds, selec
             for attr_name in src_group.ncattrs():
                 try:
                     dst_group.setncattr(attr_name, src_group.getncattr(attr_name))
-                    logger.info(f"    Copied attribute '{attr_name}' for group '{group_name}'")
                 except:
-                    logger.warning(f"  Could not copy attribute '{attr_name}' for group '{group_name}'")    
+                    pass
             
-            # Update patch count for metadata group
             if group_name == 'patch_metadata':
                 try:
                     dst_group.setncattr('n_patches', n_filtered)
-                    logger.info("    Set 'n_patches' attribute for group 'patch_metadata'")
                 except:
-                    logger.warning("  Could not set 'n_patches' attribute for group 'patch_metadata'")
+                    pass
             
-            # Copy variables in group
-            group_data = 0
-            
+            # Process variables - use numpy for large arrays
             for var_name, var in src_group.variables.items():
-                # Create variable
-                dst_var = dst_group.createVariable(
-                    var_name, 
-                    var.dtype, 
-                    var.dimensions,
-                    **compression_opts
-                )
+                var_start = time.time()
+                
+                # Check if this is a large 3D array
+                is_large_array = ('sample' in var.dimensions and 
+                                 len(var.shape) == 3 and 
+                                 var.shape[1] > 100 and var.shape[2] > 100)
+                
+                dst_var = dst_group.createVariable(var_name, var.dtype, var.dimensions, **compression_opts)
                 
                 # Copy attributes
                 for attr_name in var.ncattrs():
                     try:
                         dst_var.setncattr(attr_name, var.getncattr(attr_name))
-                        logger.info(f"    Copied attribute '{attr_name}' for variable '{var_name}'")
                     except:
-                        logger.warning(f"  Could not copy attribute '{attr_name}' for variable '{var_name}'")
+                        pass
                 
-                # Copy data
-                if 'sample' in var.dimensions:
-                    data = var[indices]
-                    dst_var[:] = data
-                    group_data += data.nbytes
+                # OPTIMIZED: For large arrays, use numpy slicing
+                if is_large_array:
+                    # Load entire array once
+                    all_data = var[:]
+                    
+                    # Slice with numpy (fast!)
+                    filtered_data = all_data[indices]
+                    
+                    # Write with compression
+                    dst_var[:] = filtered_data
+                    
+                    # Log performance
+                    var_time = time.time() - var_start
+                    data_mb = filtered_data.nbytes / (1024*1024)
+                    logger.info(f"    {var_name}: {var_time:.2f}s, {data_mb:.1f}MB")
                 else:
-                    data = var[:]
-                    dst_var[:] = data
-                    group_data += data.nbytes
+                    # Small arrays - use direct NetCDF indexing
+                    if 'sample' in var.dimensions:
+                        dst_var[:] = var[indices]
+                    else:
+                        dst_var[:] = var[:]
             
-            logger.info(f"    Group '{group_name}': {time.time() - group_start:.3f}s, "
-                       f"data: {group_data/1024/1024:.1f}MB")
-        
-        logger.info(f"  Groups: {time.time() - groups_start:.3f}s")
-        
-        # Update global attributes for filtering
-        try:
-            dst.setncattr('filtering_applied', 1)
-            dst.setncattr('patches_kept_after_filtering', n_filtered)
-        except:
-            logger.warning("  Could not set global filtering attributes")
+            logger.info(f"  ✅ {group_name}: {time.time() - group_start:.2f}s")
         
         # Close files
         src.close()
         dst.close()
         
         total_time = time.time() - start_time
-        logger.info(f"Filtering complete in {total_time:.3f}s")
+        
+        # Check output file size
+        if os.path.exists(dst_file):
+            file_size_mb = os.path.getsize(dst_file) / (1024*1024)
+            logger.info(f"✅ Filtering complete: {total_time:.2f}s")
+            logger.info(f"📁 Output file size: {file_size_mb:.1f}MB")
         
         return n_filtered
         
     except Exception as e:
-        logger.error(f"Error in filtering: {e}")
+        logger.error(f"❌ Error: {e}", exc_info=True)
         
-        # Clean up on error
-        if 'src' in locals():
-            try:
-                src.close()
-            except:
-                pass
-        
+        # Clean up
         if 'dst' in locals():
             try:
                 dst.close()
@@ -285,12 +255,12 @@ def filter_netcdf_with_groups_fast(src_file, dst_file, quality_thresholds, selec
         if os.path.exists(dst_file):
             try:
                 os.remove(dst_file)
-                logger.info(f"Cleaned up corrupted file: {dst_file}")
             except:
                 pass
         
         raise
     
+            
 def get_patch_bounds(input_file: str) -> List[Polygon]:
     """Extract spatial bounds for all patches in a file as Polygon objects"""
     
