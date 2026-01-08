@@ -33,6 +33,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# Import FilteringResults from patch_filter to avoid duplication
+from patch_filter import FilteringResults
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -147,21 +150,6 @@ class GenerationResults:
     def total_processing_time(self) -> float:
         """Alias for generation_time for backward compatibility."""
         return self.generation_time
-
-
-@dataclass
-class FilteringResults:
-    """Results from patch filtering phase."""
-    success: bool
-    input_files: List[str]
-    output_files: List[str]
-    total_patches_processed: int
-    patches_passed_quality: int
-    patches_passed_spatial: int
-    patches_kept: int
-    filtering_time: float
-    filtering_report: Dict
-    error: Optional[str] = None
 
 
 # Global worker function for multiprocessing
@@ -791,7 +779,8 @@ class SAR2HeightPipeline:
                 output_dir=self.config.filtered_patches_dir,
                 quality_thresholds=q_thresholds,
                 overlap_tolerance=overlap_tol,
-                file_prefix=file_prefix
+                file_prefix=file_prefix,
+                override=False
             )
             
             # Convert the results from filter_patch_files to FilteringResults format

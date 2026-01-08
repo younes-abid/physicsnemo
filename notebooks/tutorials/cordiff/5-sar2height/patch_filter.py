@@ -475,7 +475,8 @@ def filter_patch_files(input_files: List[str],
                       output_dir: str,
                       quality_thresholds: Optional[QualityThresholds] = None,
                       overlap_tolerance: float = 0.0,
-                      file_prefix: str = "filtered") -> FilteringResults:
+                      file_prefix: str = "filtered",
+                      override: bool = False) -> FilteringResults:
     """
     SIMPLE patch filtering with spatial overlap support and CONSISTENT thresholds
     
@@ -485,6 +486,7 @@ def filter_patch_files(input_files: List[str],
         quality_thresholds: Quality filtering criteria (CONSISTENT - no adaptation)
         overlap_tolerance: Spatial overlap tolerance (0.0 = no overlap allowed, 1.0 = full overlap allowed)
         file_prefix: Prefix for output filenames
+        override: If False, skip files that already exist
         
     Returns:
         FilteringResults object with details of the filtering operation
@@ -497,13 +499,15 @@ def filter_patch_files(input_files: List[str],
     output_dir.mkdir(parents=True, exist_ok=True)
     
     output_files = []
+    skipped_files = []
     total_stats = {
         'total_patches_processed': 0,
         'patches_passed_quality': 0,
         'patches_passed_spatial': 0,
         'patches_kept': 0,
         'files_processed': 0,
-        'files_created': 0
+        'files_created': 0,
+        'files_skipped': 0
     }
     
     logger.info(f"🚀 FAST filtering {len(input_files)} files with CONSISTENT thresholds")
@@ -518,9 +522,16 @@ def filter_patch_files(input_files: List[str],
         input_path = Path(input_file)
         
         # Create output filename
-        base_name = input_path.stem.replace('full_patches_', '').replace('_patches', '')
+        base_name = input_path.stem.replace('full_patches_', '')
         output_name = f"{file_prefix}_{base_name}.nc"
         output_path = output_dir / output_name
+        
+        # Check if output file already exists and skip if override is False
+        if output_path.exists() and not override:
+            logger.info(f"⏭️  Skipping {output_path.name} (already exists, override=False)")
+            skipped_files.append(str(output_path))
+            total_stats['files_skipped'] += 1
+            continue
         
         # Get existing coverage before processing this file
         existing_coverage = get_existing_coverage(str(output_dir), file_prefix)
@@ -563,9 +574,11 @@ def filter_patch_files(input_files: List[str],
             'overlap_tolerance': overlap_tolerance
         },
         'output_files': output_files,
+        'skipped_files': skipped_files,
         'processing_summary': {
             'input_files': len(input_files),
             'output_files': len(output_files),
+            'skipped_files': len(skipped_files),
             'total_patches_kept': total_stats['patches_kept'],
             'filtering_efficiency': total_stats['patches_kept'] / max(1, total_stats['total_patches_processed'])
         }
@@ -574,7 +587,7 @@ def filter_patch_files(input_files: List[str],
     logger.info("✅ FAST filtering complete!")
     logger.info(f"📊 Results: {total_stats['patches_kept']}/{total_stats['total_patches_processed']} patches kept "
                f"({filtering_report['processing_summary']['filtering_efficiency']*100:.1f}% efficiency)")
-    logger.info(f"📁 Created {len(output_files)} filtered files")
+    logger.info(f"📁 Created {len(output_files)} filtered files, skipped {len(skipped_files)} existing files")
     
     return FilteringResults(
         success=True,
@@ -582,6 +595,8 @@ def filter_patch_files(input_files: List[str],
         output_files=output_files,
         total_patches_processed=total_stats['total_patches_processed'],
         patches_kept=total_stats['patches_kept'],
+        patches_passed_quality=total_stats['patches_passed_quality'],
+        patches_passed_spatial=total_stats['patches_passed_spatial'],
         processing_details=filtering_report
     )
 
