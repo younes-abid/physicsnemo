@@ -22,6 +22,6 @@ docker run -it --rm \
     -v "$(pwd)/outputs/logs:/app/logs" \
     -v "$(pwd)/outputs/wandb:/app/wandb" \
     -v "$(pwd)/outputs/tensorboard:/app/tensorboard" \
+    -v "/:/app/host" \
     physiscsnemo:latest
 
-#     -v "/:/app/host" \

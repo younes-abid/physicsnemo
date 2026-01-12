@@ -1,0 +1,1 @@
+docker exec -it physiscsnemo_container /bin/bash

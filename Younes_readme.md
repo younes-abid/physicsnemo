@@ -8,9 +8,9 @@
 # To run your first example in docker container, you can use the following command:
 
 ```bash
-bash scripts/build_docker.sh
-bash scripts/run_docker.sh
-docker exec -it physiscsnemo_container /bin/bash
+bash scripts/docker/physicsnemo/build.sh
+bash scripts/docker/physicsnemo/run.sh
+bash scripts/docker/physicsnemo/exec.sh
 
 ## This will build the docker image and run the example script inside the container.
 bash scripts/example.sh
