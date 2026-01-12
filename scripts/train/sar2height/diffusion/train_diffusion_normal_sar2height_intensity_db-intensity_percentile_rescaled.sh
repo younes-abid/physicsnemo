@@ -113,7 +113,8 @@ log_message "========================================"
 log_message "Training all files"
 log_message "there are 4470 patches in total"
 log_message "========================================"
+N_PATCHES=4470
 EPOCHS=200
-DURATION_INCREMENT=4470*$EPOCHS
+DURATION_INCREMENT=$N_PATCHES*$EPOCHS
 train_on_files "$F1" "$F2" "$F3" "$F4" "$F5" "$F6" "$F7"
 log_message "========================================"

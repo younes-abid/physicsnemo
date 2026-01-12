@@ -102,12 +102,13 @@ train_on_files() {
 }
 
 # 1. Warm-up round of training
-DURATION_INCREMENT=1000
+DURATION_INCREMENT=5000
 training_duration=0
 log_message "========================================"
-log_message "Warm up on one file"
+log_message "Warm up on all files"
+log_message "there are 4470 patches in total"
 log_message "========================================"
-train_on_files "$F1"
+train_on_files "$F1" "$F2" "$F3" "$F4" "$F5" "$F6" "$F7"
 
 log_message "========================================"
 log_message "Training all files"

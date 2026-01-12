@@ -73,6 +73,7 @@ tensorboard --logdir=/app/tensorboard/Fog_index/regression --host 0.0.0.0 --port
 tensorboard --logdir=/app/tensorboard/Rain_rate_LN_Rain_rate_PT/diffusion --host 0.0.0.0 --port 6006
 
 tensorboard --logdir=/app/tensorboard/sar2height/intensity_db-intensity_percentile_rescaled/regression --host 0.0.0.0 --port 6006
+tensorboard --logdir=/app/tensorboard/sar2height/intensity_db-intensity_percentile_rescaled/diffusion --host 0.0.0.0 --port 6006
 
 ssh -L 6006:localhost:6006 younes.abid@10.120.125.144
 https://localhost:6006
