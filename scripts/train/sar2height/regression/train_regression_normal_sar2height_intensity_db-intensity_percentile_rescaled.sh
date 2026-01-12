@@ -1,38 +1,38 @@
 #!/bin/bash
 # 0. paths
-DATA_PATH="/mnt/storage/younes.abid/physicsnemo/data/sar2height/"
-FILTERED_PATCHES_DIR=$DATA_PATH"processed/filtered_patches/"
-STATS_DIR=$DATA_PATH"processed/filtered_patches/stats_432/"
+DATA_PATH="/app/data/sar2height/"
+PREPROCESSED_PATCHES_DIR=$DATA_PATH"processed/preprocessed_patches/"
+STATS_DIR=$DATA_PATH"processed/preprocessed_patches/"
 
 # File 1: X2 - exists ✓
-F1="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X2_SLC_SLH_56495_20210517T180931_1054patches.nc"
+F1="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X2_SLC_SLH_56495_20210517T180931_1054patches.nc"
 
 # File 2: X8 - exists ✓
-F2="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X8_SLC_SLH_54750_20210503T175109_876patches.nc"
+F2="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X8_SLC_SLH_54750_20210503T175109_876patches.nc"
 
 # File 3: X4_46812 - exists ✓
-F3="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X4_SLC_SLH_46812_20210311T110553_876patches.nc"
+F3="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X4_SLC_SLH_46812_20210311T110553_876patches.nc"
 
 # File 4: X4_45265 - exists ✓
-F4="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X4_SLC_SLH_45265_20210302T235532_1170patches.nc"
+F4="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X4_SLC_SLH_45265_20210302T235532_1170patches.nc"
 
 # File 5: X7_41464 - exists ✓
-F5="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X7_SLC_SLH_41464_20210217T220314_1120patches.nc"
+F5="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X7_SLC_SLH_41464_20210217T220314_1120patches.nc"
 
 # File 6: X7_46269 - DOES NOT EXIST as filtered file (skipping)
 # File 7: X7_58884 - exists ✓
-F6="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X7_SLC_SLH_58884_20210531T214045_1178patches.nc"
+F6="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X7_SLC_SLH_58884_20210531T214045_1178patches.nc"
 
 # File 8: X7_41463 - DOES NOT EXIST as filtered file (skipping)
 # File 9: X7_123088 - exists ✓
-F7="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X7_SLC_SLH_123088_20210825T214159_1273patches.nc"
+F7="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X7_SLC_SLH_123088_20210825T214159_1273patches.nc"
 
 # File 10: X7_123096 - DOES NOT EXIST as filtered file (skipping)
 # File 11: X7_118443 - DOES NOT EXIST as filtered file (skipping)
 # File 12: X7_119466 - DOES NOT EXIST as filtered file (skipping)
 # File 13: X7_122288 - DOES NOT EXIST as filtered file (skipping)
 # File 14: X7_148224 - exists ✓
-VAL="${FILTERED_PATCHES_DIR}filtered_patches_ICEYE_X7_SLC_SLH_148224_20211013T214143_1330patches.nc"
+VAL="${PREPROCESSED_PATCHES_DIR}preprocessed_patches_ICEYE_X7_SLC_SLH_148224_20211013T214143_1330patches.nc"
 
 MODEL="regression" # can be regression or diffusion
 VARIABLES="intensity_db-intensity_percentile_rescaled" 
@@ -102,7 +102,7 @@ train_on_files() {
 }
 
 # 1. Warm-up round of training
-DURATION_INCREMENT=5000
+DURATION_INCREMENT=1000
 training_duration=0
 log_message "========================================"
 log_message "Warm up on one file"
@@ -110,57 +110,10 @@ log_message "========================================"
 train_on_files "$F1"
 
 log_message "========================================"
-log_message "First round of training"
-log_message "1 file = 150 days *24 hours =3600 steps"
-log_message "3 files = 450 days *24 hours =10800 steps"
-log_message "We set the increment to 15000 to ensure we go beyond 10800 steps"
+log_message "Training all files"
+log_message "there are 4470 patches in total"
 log_message "========================================"
-DURATION_INCREMENT=15000
-train_on_files "$F1" "$F2" "$F3"
-train_on_files "$F4" "$F5" "$F6"
-train_on_files "$F7" "$F8" "$F9"
-train_on_files "$F10" "$F11"
-
-log_message "========================================"
-log_message "Second round of training"
-log_message "1 file = 150 days *24 hours =3600 steps"
-log_message "3 files = 450 days *24 hours =10800 steps"
-log_message "We set the increment to 25000 to ensure we go beyond 10800 steps twice"
-log_message "========================================"
-DURATION_INCREMENT=25000
-train_on_files "$F1" "$F2" "$F3"
-train_on_files "$F3" "$F4" "$F5"
-train_on_files "$F5" "$F6" "$F7"
-train_on_files "$F7" "$F8" "$F9"
-train_on_files "$F9" "$F10" "$F11"
-
-log_message "========================================"
-log_message "Third round of training"
-log_message "1 file = 150 days *24 hours =3600 steps"
-log_message "3 files = 450 days *24 hours =10800 steps"
-log_message "We set the increment to 35000 to ensure we go beyond 10800 steps thrice"
-log_message "========================================"
-DURATION_INCREMENT=35000
-train_on_files "$F1" "$F2" "$F3"
-train_on_files "$F3" "$F4" "$F5"
-train_on_files "$F5" "$F6" "$F7"
-train_on_files "$F7" "$F8" "$F9"
-train_on_files "$F9" "$F10" "$F11"
-
-log_message "========================================"
-log_message "Fourth round of training"
-log_message "1 file = 150 days *24 hours =3600 steps"
-log_message "3 files = 450 days *24 hours =10800 steps"
-log_message "We set the increment to 45000 to ensure we go beyond 10800 steps four times"
-log_message "========================================"
-DURATION_INCREMENT=45000
-train_on_files "$F1" "$F2" "$F3"
-train_on_files "$F3" "$F4" "$F5"
-train_on_files "$F5" "$F6" "$F7"
-train_on_files "$F7" "$F8" "$F9"
-train_on_files "$F9" "$F10" "$F11"
-
-log_message "========================================"
-log_message "All training rounds completed!"
-log_message "Main log file: $MAIN_LOG"
+EPOCHS=200
+DURATION_INCREMENT=4470*$EPOCHS
+train_on_files "$F1" "$F2" "$F3" "$F4" "$F5" "$F6" "$F7"
 log_message "========================================"

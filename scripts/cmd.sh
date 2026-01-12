@@ -33,3 +33,4 @@ find /app/host/tmp -type f -atime +1 -delete
 # set symbolic links 
 mkdir -p /mnt/storage/younes.abid/physicsnemo/data/custom_data_2
 ln -s /mnt/storage/younes.abid/physicsnemo/data/custom_data_2 /home/younes.abid/git/physicsnemo/data/custom_data_2
+ln -s /mnt/storage/younes.abid/physicsnemo/data/sar2height /home/younes.abid/git/physicsnemo/data/sar2height
