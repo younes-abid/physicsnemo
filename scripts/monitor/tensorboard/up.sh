@@ -1,0 +1,1 @@
+tensorboard --logdir=/app/tensorboard/sar2height/intensity_db-intensity_percentile_rescaled/diffusion --host 0.0.0.0 --port 6006

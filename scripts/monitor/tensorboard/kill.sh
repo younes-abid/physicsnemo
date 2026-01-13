@@ -1,0 +1,1 @@
+apt update && apt install lsof && lsof -i :6006 | awk 'NR>1 {print $2}' | xargs kill -9
