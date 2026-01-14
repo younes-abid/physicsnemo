@@ -3,7 +3,6 @@ SAR2Height Experiment Manager
 
 Coordinates all components of the SAR2Height prediction pipeline.
 Manages experiment configuration, execution flow, and result organization.
-Updated for multi-sample processing and visualization aspect ratio correction.
 """
 
 import os
@@ -34,10 +33,8 @@ class ExperimentManager:
     - Model loading and configuration
     - Prediction execution (regression + diffusion + ensemble)
     - Metrics calculation and analysis
-    - Visualization generation with aspect ratio correction
+    - Visualization generation
     - Results saving and organization (NetCDF for raw data, JSON for analysis)
-    
-    Updated for multi-sample processing and proper visualization handling.
     """
     
     def __init__(self, 
@@ -50,7 +47,7 @@ class ExperimentManager:
         Args:
             experiment_name: Name for this experiment
             output_dir: Directory to save results
-            config: Experiment configuration dictionary including visualization settings
+            config: Experiment configuration dictionary
         """
         self.experiment_name = experiment_name
         self.output_dir = Path(output_dir)
@@ -68,23 +65,13 @@ class ExperimentManager:
         for subdir in [self.predictions_dir, self.analysis_dir, self.visualizations_dir]:
             subdir.mkdir(exist_ok=True)
         
-        # Initialize components with configuration
+        # Initialize components
         self.data_manager = None
         self.regression_pipeline = None
         self.diffusion_pipeline = None
         self.ensemble_analyzer = EnsembleAnalyzer()
         self.metrics_calculator = SAR2HeightMetrics()
-        
-        # Initialize visualizer with aspect ratio configuration
-        visualization_config = self.config.get('visualization_config', {})
-        aspect_ratio_factor = self.config.get('aspect_ratio_factor', 1.0)
-        apply_aspect_correction = self.config.get('apply_aspect_correction', False)
-        
-        self.visualizer = SAR2HeightVisualizer(
-            aspect_ratio_factor=aspect_ratio_factor,
-            apply_aspect_correction=apply_aspect_correction,
-            config=visualization_config
-        )
+        self.visualizer = SAR2HeightVisualizer()
         
         # Store checkpoint paths for diffusion loss function
         self.regression_checkpoint_path = None
@@ -95,9 +82,7 @@ class ExperimentManager:
             'experiment_info': {
                 'name': experiment_name,
                 'timestamp': time.strftime('%Y%m%d_%H%M%S'),
-                'config': self.config,
-                'sample_idx': self.config.get('sample_idx', 0),
-                'visualization_config': visualization_config
+                'config': self.config
             },
             'data': {},
             'predictions': {},
@@ -112,15 +97,12 @@ class ExperimentManager:
             }
         }
         
-        sample_info = f" (Sample {self.config.get('sample_idx', 'Unknown')})" if 'sample_idx' in self.config else ""
-        print(f"🚀 SAR2Height Experiment Manager initialized: {experiment_name}{sample_info}")
+        print(f"🚀 SAR2Height Experiment Manager initialized: {experiment_name}")
         print(f"📁 Results will be saved to: {self.experiment_dir}")
-        if apply_aspect_correction:
-            print(f"📐 Aspect ratio correction enabled: {aspect_ratio_factor:.1f}x factor")
         print(f"📊 Predictions: {self.predictions_dir}")
         print(f"📈 Analysis: {self.analysis_dir}")
         print(f"🎨 Visualizations: {self.visualizations_dir}")
-
+    
     def setup_data(self, 
                    data_file_path: str,
                    stats_dir: str,
@@ -224,6 +206,13 @@ class ExperimentManager:
                     diffusion_loaded = False
                 else:
                     print("✓ Diffusion loss function created successfully")
+            
+            # Test models
+            # if regression_loaded:
+            #     self.regression_pipeline.test_model(n_input_channels)
+            
+            # if diffusion_loaded:
+            #     self.diffusion_pipeline.test_model(n_input_channels)
             
             # Store model information
             self.results['models'] = {
@@ -779,10 +768,10 @@ class ExperimentManager:
         
         print(f"✓ Analysis loaded successfully")
         return analysis
-
+    
     def generate_visualizations(self, save_plots: bool = True) -> bool:
         """
-        Generate all visualizations for the experiment including new detailed plots with aspect ratio correction.
+        Generate all visualizations for the experiment.
         
         Args:
             save_plots: Whether to save plots to files
@@ -790,7 +779,7 @@ class ExperimentManager:
         Returns:
             Success status
         """
-        print("=== Generating Comprehensive Visualizations ===")
+        print("=== Generating Visualizations ===")
         
         predictions = self.results.get('predictions', {})
         ensemble_analysis = self.results.get('ensemble_analysis', {})
@@ -807,7 +796,6 @@ class ExperimentManager:
             # Prepare visualization data
             ground_truth = predictions['ground_truth']
             regression_pred = predictions['regression_output']
-            diffusion_pred = predictions['diffusion_output']
             ensemble_mean = predictions['ensemble_mean']
             ensemble_std = predictions['ensemble_std']
             ensemble_members = predictions['ensemble_members']
@@ -820,13 +808,8 @@ class ExperimentManager:
             
             visualization_paths = {}
             
-            # Get aspect ratio info for logging
-            aspect_info = ""
-            if hasattr(self.visualizer, 'apply_aspect_correction') and self.visualizer.apply_aspect_correction:
-                aspect_info = f" (aspect ratio: {self.visualizer.aspect_ratio_factor:.1f}x)"
-            
-            # 1. Generate input channels visualization (with gray colormap for intensity)
-            print(f"🎨 Generating input channels visualization{aspect_info}...")
+            # Generate visualizations
+            print("🎨 Generating input channels visualization...")
             fig1 = self.visualizer.plot_input_channels(input_data_dict)
             if save_plots:
                 path1 = self.visualizations_dir / "input_channels.png"
@@ -834,10 +817,9 @@ class ExperimentManager:
                 visualization_paths['input_channels'] = str(path1)
                 print(f"  💾 Saved: {path1.name}")
             
-            # 2. Generate prediction comparison (existing figure - kept)
-            print(f"🎨 Generating prediction comparison{aspect_info}...")
+            print("🎨 Generating prediction comparison...")
             fig2 = self.visualizer.plot_prediction_comparison(
-                ground_truth, regression_pred, diffusion_pred
+                ground_truth, regression_pred, ensemble_mean
             )
             if save_plots:
                 path2 = self.visualizations_dir / "prediction_comparison.png"
@@ -845,8 +827,7 @@ class ExperimentManager:
                 visualization_paths['prediction_comparison'] = str(path2)
                 print(f"  💾 Saved: {path2.name}")
             
-            # 3. Generate ensemble analysis (existing figure - kept)
-            print(f"🎨 Generating ensemble analysis{aspect_info}...")
+            print("🎨 Generating ensemble analysis...")
             fig3 = self.visualizer.plot_ensemble_analysis(
                 ensemble_mean, ensemble_std, ground_truth, ensemble_members
             )
@@ -856,98 +837,17 @@ class ExperimentManager:
                 visualization_paths['ensemble_analysis'] = str(path3)
                 print(f"  💾 Saved: {path3.name}")
             
-            # 4. NEW: Generate all ensemble members grid
-            print(f"🎨 Generating all ensemble members grid{aspect_info}...")
-            fig4 = self.visualizer.plot_all_ensemble_members(
-                ensemble_members, ground_truth
-            )
-            if save_plots:
-                path4 = self.visualizations_dir / "all_ensemble_members.png"
-                fig4.savefig(path4, dpi=150, bbox_inches='tight')
-                visualization_paths['all_ensemble_members'] = str(path4)
-                print(f"  💾 Saved: {path4.name}")
-            
-            # 5. NEW: Generate regression prediction analysis
-            print(f"🎨 Generating regression prediction analysis{aspect_info}...")
-            fig5 = self.visualizer.plot_regression_predictions(
-                ground_truth, regression_pred
-            )
-            if save_plots:
-                path5 = self.visualizations_dir / "regression_analysis.png"
-                fig5.savefig(path5, dpi=150, bbox_inches='tight')
-                visualization_paths['regression_analysis'] = str(path5)
-                print(f"  💾 Saved: {path5.name}")
-            
-            # 6. NEW: Generate focused regression residual analysis
-            print(f"🎨 Generating regression residual focus{aspect_info}...")
-            fig6 = self.visualizer.plot_regression_residual_focus(
-                ground_truth, regression_pred
-            )
-            if save_plots:
-                path6 = self.visualizations_dir / "regression_residual_focus.png"
-                fig6.savefig(path6, dpi=150, bbox_inches='tight')
-                visualization_paths['regression_residual_focus'] = str(path6)
-                print(f"  💾 Saved: {path6.name}")
-            
-            # 7. NEW: Generate diffusion prediction analysis
-            print(f"🎨 Generating diffusion prediction analysis{aspect_info}...")
-            fig7 = self.visualizer.plot_diffusion_predictions(
-                ground_truth, diffusion_pred
-            )
-            if save_plots:
-                path7 = self.visualizations_dir / "diffusion_analysis.png"
-                fig7.savefig(path7, dpi=150, bbox_inches='tight')
-                visualization_paths['diffusion_analysis'] = str(path7)
-                print(f"  💾 Saved: {path7.name}")
-            
-            # 8. NEW: Generate focused diffusion residual analysis
-            print(f"🎨 Generating diffusion residual focus{aspect_info}...")
-            fig8 = self.visualizer.plot_diffusion_residual_focus(
-                ground_truth, diffusion_pred
-            )
-            if save_plots:
-                path8 = self.visualizations_dir / "diffusion_residual_focus.png"
-                fig8.savefig(path8, dpi=150, bbox_inches='tight')
-                visualization_paths['diffusion_residual_focus'] = str(path8)
-                print(f"  💾 Saved: {path8.name}")
-            
             # Store visualization information
             self.results['visualizations'] = {
                 'generated': True,
                 'save_plots': save_plots,
                 'paths': visualization_paths,
-                'aspect_ratio_applied': hasattr(self.visualizer, 'apply_aspect_correction') and self.visualizer.apply_aspect_correction,
-                'aspect_ratio_factor': getattr(self.visualizer, 'aspect_ratio_factor', 1.0),
-                'figures_generated': [
-                    'input_channels',
-                    'prediction_comparison', 
-                    'ensemble_analysis',
-                    'all_ensemble_members',
-                    'regression_analysis',
-                    'regression_residual_focus', 
-                    'diffusion_analysis',
-                    'diffusion_residual_focus'
-                ],
-                'description': {
-                    'input_channels': 'SAR input channels with proper colormaps (gray for intensity)',
-                    'prediction_comparison': 'Model predictions comparison with jet colormap for heights',
-                    'ensemble_analysis': 'Ensemble analysis with sample members (first 4)',
-                    'all_ensemble_members': 'Complete grid of all ensemble members + statistics',
-                    'regression_analysis': 'Regression model predictions and residual analysis',
-                    'regression_residual_focus': 'Focused regression residual analysis with distributions',
-                    'diffusion_analysis': 'Diffusion model predictions and residual analysis', 
-                    'diffusion_residual_focus': 'Focused diffusion residual analysis with distributions'
-                }
+                'figures_generated': ['input_channels', 'prediction_comparison', 'ensemble_analysis']
             }
             
-            print(f"✅ Comprehensive visualization generation completed")
+            print(f"✅ Visualization generation completed")
             if save_plots:
                 print(f"📁 Saved {len(visualization_paths)} plots to: {self.visualizations_dir}")
-                if self.results['visualizations']['aspect_ratio_applied']:
-                    print(f"📐 Aspect ratio correction applied: {self.results['visualizations']['aspect_ratio_factor']:.1f}x factor")
-                print("📋 Generated visualizations:")
-                for name, description in self.results['visualizations']['description'].items():
-                    print(f"  • {name}: {description}")
             
             return True
             
@@ -956,7 +856,7 @@ class ExperimentManager:
             import traceback
             traceback.print_exc()
             return False
-
+    
     def run_complete_experiment(self,
                               data_file_path: str,
                               stats_dir: str,
@@ -1080,7 +980,6 @@ class ExperimentManager:
             'experiment_name': self.experiment_name,
             'experiment_directory': str(self.experiment_dir),
             'completed': self.results['experiment_info'].get('completed_successfully', False),
-            'sample_idx': self.results['experiment_info'].get('sample_idx', 0),
             'file_structure': {
                 'predictions_dir': str(self.predictions_dir),
                 'analysis_dir': str(self.analysis_dir),
@@ -1100,16 +999,6 @@ class ExperimentManager:
         if 'metrics' in self.results:
             summary['model_performance'] = self.results['metrics'].get('model_performance', {})
         
-        # Visualization summary
-        if 'visualizations' in self.results:
-            viz_summary = {
-                'generated': self.results['visualizations'].get('generated', False),
-                'count': len(self.results['visualizations'].get('figures_generated', [])),
-                'aspect_ratio_applied': self.results['visualizations'].get('aspect_ratio_applied', False),
-                'aspect_ratio_factor': self.results['visualizations'].get('aspect_ratio_factor', 1.0)
-            }
-            summary['visualization_summary'] = viz_summary
-        
         # File paths
         summary['saved_files'] = self.results['file_paths']
         
@@ -1118,69 +1007,3 @@ class ExperimentManager:
             summary['total_time_seconds'] = self.results['experiment_info']['total_time_seconds']
         
         return summary
-    
-    def cleanup_models(self) -> None:
-        """
-        Clean up model references to free memory.
-        Useful for multi-sample processing when models are loaded once and reused.
-        """
-        if hasattr(self, 'regression_pipeline') and self.regression_pipeline:
-            if hasattr(self.regression_pipeline, 'cleanup'):
-                self.regression_pipeline.cleanup()
-        
-        if hasattr(self, 'diffusion_pipeline') and self.diffusion_pipeline:
-            if hasattr(self.diffusion_pipeline, 'cleanup'):
-                self.diffusion_pipeline.cleanup()
-        
-        print("🧹 Model cleanup completed")
-    
-    def get_sample_info(self) -> Dict[str, Any]:
-        """
-        Get information about the current sample being processed.
-        
-        Returns:
-            Dictionary with sample information
-        """
-        return {
-            'experiment_name': self.experiment_name,
-            'sample_idx': self.results['experiment_info'].get('sample_idx', 0),
-            'data_file': self.results.get('data', {}).get('file_path'),
-            'selected_variables': self.results.get('data', {}).get('selected_variables', []),
-            'visualization_config': self.results['experiment_info'].get('visualization_config', {}),
-            'aspect_ratio_factor': self.config.get('aspect_ratio_factor', 1.0),
-            'apply_aspect_correction': self.config.get('apply_aspect_correction', False)
-        }
-    
-    @classmethod 
-    def create_for_multi_sample(cls, 
-                               base_experiment_name: str,
-                               sample_idx: int,
-                               output_dir: str,
-                               visualization_config: Dict[str, Any],
-                               aspect_ratio_factor: float = 1.0,
-                               apply_aspect_correction: bool = False) -> 'ExperimentManager':
-        """
-        Create an ExperimentManager instance configured for multi-sample processing.
-        
-        Args:
-            base_experiment_name: Base name for the experiment
-            sample_idx: Index of the sample to process
-            output_dir: Output directory path
-            visualization_config: Visualization configuration dictionary
-            aspect_ratio_factor: Aspect ratio correction factor
-            apply_aspect_correction: Whether to apply aspect ratio correction
-            
-        Returns:
-            Configured ExperimentManager instance
-        """
-        experiment_name = f"{base_experiment_name}_sample_{sample_idx}"
-        
-        config = {
-            'sample_idx': sample_idx,
-            'visualization_config': visualization_config,
-            'aspect_ratio_factor': aspect_ratio_factor,
-            'apply_aspect_correction': apply_aspect_correction,
-            'multi_sample_mode': True
-        }
-        
-        return cls(experiment_name, output_dir, config)
