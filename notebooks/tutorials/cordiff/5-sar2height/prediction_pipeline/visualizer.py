@@ -159,7 +159,8 @@ class SAR2HeightVisualizer:
                     n, bins, patches_orig = None, None, None
                     # Extract data by re-plotting (this is a workaround)
                     hist_data = metadata.get('hist_data', [])
-                    if hist_data:
+                    # Fix: Properly check if hist_data exists and has elements
+                    if hist_data is not None and len(hist_data) > 0:
                         clean_ax.hist(hist_data, bins=metadata.get('bins', 50), 
                                     alpha=0.7, color=metadata.get('color', 'blue'),
                                     edgecolor='black')
@@ -173,14 +174,30 @@ class SAR2HeightVisualizer:
                 collections = ax.collections
                 if collections:
                     for collection in collections:
-                        offsets = collection.get_offsets()
-                        colors = collection.get_facecolors()
-                        sizes = collection.get_sizes()
-                        clean_ax.scatter(offsets[:, 0], offsets[:, 1], 
-                                       c=colors, s=sizes, alpha=0.5)
+                        # Handle different collection types
+                        if hasattr(collection, 'get_offsets') and hasattr(collection, 'get_sizes'):
+                            # This is a scatter collection (PathCollection)
+                            offsets = collection.get_offsets()
+                            colors = collection.get_facecolors()
+                            sizes = collection.get_sizes()
+                            clean_ax.scatter(offsets[:, 0], offsets[:, 1], 
+                                           c=colors, s=sizes, alpha=0.5)
+                        elif hasattr(collection, 'get_segments'):
+                            # This is a line collection (LineCollection)
+                            segments = collection.get_segments()
+                            colors = collection.get_colors()
+                            linewidths = collection.get_linewidths()
+                            for i, segment in enumerate(segments):
+                                if len(segment) > 0:
+                                    x_coords = [point[0] for point in segment]
+                                    y_coords = [point[1] for point in segment]
+                                    color = colors[i] if len(colors) > i else colors[0] if len(colors) > 0 else 'blue'
+                                    linewidth = linewidths[i] if len(linewidths) > i else linewidths[0] if len(linewidths) > 0 else 1
+                                    clean_ax.plot(x_coords, y_coords, color=color, linewidth=linewidth, alpha=0.7)
+                        
                         clean_ax.grid(True, alpha=0.3)
                         
-                # Add perfect calibration line if it exists
+                # Add regular lines if they exist (for things like perfect calibration line)
                 lines = ax.get_lines()
                 if lines:
                     for line in lines:
@@ -188,7 +205,7 @@ class SAR2HeightVisualizer:
                         clean_ax.plot(xdata, ydata, color=line.get_color(),
                                     linestyle=line.get_linestyle(),
                                     linewidth=line.get_linewidth(),
-                                    alpha=line.get_alpha())
+                                    alpha=line.get_alpha() or 1.0)
             
             # Remove all labels, titles, and text
             clean_ax.set_title('')
@@ -203,12 +220,28 @@ class SAR2HeightVisualizer:
                             facecolor='white', edgecolor='none')
             plt.close(clean_fig)
             
-            # Save metadata as JSON
+            # Save metadata as JSON with proper serialization
             metadata_path = subfolder_path / f"{subplot_name}.json"
             with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(metadata, f, indent=2, default=self._json_serialize)
         
         print(f"  💾 Saved {len([m for m in subplot_metadata if m.get('has_data', True)])} individual subplots")
+
+    def _json_serialize(self, obj):
+        """Custom JSON serializer for numpy types and other non-serializable objects."""
+        if isinstance(obj, (np.integer, np.floating, np.bool_)):
+            return obj.item()
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        elif hasattr(obj, 'tolist'):  # Handle other numpy-like objects
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # Handle numpy scalars
+            return obj.item()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
     def _create_subplot_metadata(self, ax, row: int, col: int, plot_type: str, **kwargs) -> Dict[str, Any]:
         """

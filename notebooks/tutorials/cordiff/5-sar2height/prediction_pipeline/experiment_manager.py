@@ -827,89 +827,103 @@ class ExperimentManager:
             
             # 1. Generate input channels visualization (with gray colormap for intensity)
             print(f"🎨 Generating input channels visualization{aspect_info}...")
-            fig1 = self.visualizer.plot_input_channels(input_data_dict)
             if save_plots:
                 path1 = self.visualizations_dir / "input_channels.png"
-                fig1.savefig(path1, dpi=150, bbox_inches='tight')
+                fig1 = self.visualizer.plot_input_channels(input_data_dict, save_path=str(path1))
                 visualization_paths['input_channels'] = str(path1)
-                print(f"  💾 Saved: {path1.name}")
+            else:
+                fig1 = self.visualizer.plot_input_channels(input_data_dict)
             
-            # 2. Generate prediction comparison (existing figure - kept)
+            # 2. Generate prediction comparison
             print(f"🎨 Generating prediction comparison{aspect_info}...")
-            fig2 = self.visualizer.plot_prediction_comparison(
-                ground_truth, regression_pred, diffusion_pred
-            )
             if save_plots:
                 path2 = self.visualizations_dir / "prediction_comparison.png"
-                fig2.savefig(path2, dpi=150, bbox_inches='tight')
+                fig2 = self.visualizer.plot_prediction_comparison(
+                    ground_truth, regression_pred, diffusion_pred, save_path=str(path2)
+                )
                 visualization_paths['prediction_comparison'] = str(path2)
-                print(f"  💾 Saved: {path2.name}")
+            else:
+                fig2 = self.visualizer.plot_prediction_comparison(
+                    ground_truth, regression_pred, diffusion_pred
+                )
             
-            # 3. Generate ensemble analysis (existing figure - kept)
+            # 3. Generate ensemble analysis
             print(f"🎨 Generating ensemble analysis{aspect_info}...")
-            fig3 = self.visualizer.plot_ensemble_analysis(
-                ensemble_mean, ensemble_std, ground_truth, ensemble_members
-            )
             if save_plots:
                 path3 = self.visualizations_dir / "ensemble_analysis.png"
-                fig3.savefig(path3, dpi=150, bbox_inches='tight')
+                fig3 = self.visualizer.plot_ensemble_analysis(
+                    ensemble_mean, ensemble_std, ground_truth, ensemble_members, save_path=str(path3)
+                )
                 visualization_paths['ensemble_analysis'] = str(path3)
-                print(f"  💾 Saved: {path3.name}")
+            else:
+                fig3 = self.visualizer.plot_ensemble_analysis(
+                    ensemble_mean, ensemble_std, ground_truth, ensemble_members
+                )
             
-            # 4. NEW: Generate all ensemble members grid
+            # 4. Generate all ensemble members grid
             print(f"🎨 Generating all ensemble members grid{aspect_info}...")
-            fig4 = self.visualizer.plot_all_ensemble_members(
-                ensemble_members, ground_truth
-            )
             if save_plots:
                 path4 = self.visualizations_dir / "all_ensemble_members.png"
-                fig4.savefig(path4, dpi=150, bbox_inches='tight')
+                fig4 = self.visualizer.plot_all_ensemble_members(
+                    ensemble_members, ground_truth, save_path=str(path4)
+                )
                 visualization_paths['all_ensemble_members'] = str(path4)
-                print(f"  💾 Saved: {path4.name}")
+            else:
+                fig4 = self.visualizer.plot_all_ensemble_members(
+                    ensemble_members, ground_truth
+                )
             
-            # 5. NEW: Generate regression prediction analysis
+            # 5. Generate regression prediction analysis
             print(f"🎨 Generating regression prediction analysis{aspect_info}...")
-            fig5 = self.visualizer.plot_regression_predictions(
-                ground_truth, regression_pred
-            )
             if save_plots:
                 path5 = self.visualizations_dir / "regression_analysis.png"
-                fig5.savefig(path5, dpi=150, bbox_inches='tight')
+                fig5 = self.visualizer.plot_regression_predictions(
+                    ground_truth, regression_pred, save_path=str(path5)
+                )
                 visualization_paths['regression_analysis'] = str(path5)
-                print(f"  💾 Saved: {path5.name}")
+            else:
+                fig5 = self.visualizer.plot_regression_predictions(
+                    ground_truth, regression_pred
+                )
             
-            # 6. NEW: Generate focused regression residual analysis
+            # 6. Generate focused regression residual analysis
             print(f"🎨 Generating regression residual focus{aspect_info}...")
-            fig6 = self.visualizer.plot_regression_residual_focus(
-                ground_truth, regression_pred
-            )
             if save_plots:
                 path6 = self.visualizations_dir / "regression_residual_focus.png"
-                fig6.savefig(path6, dpi=150, bbox_inches='tight')
+                fig6 = self.visualizer.plot_regression_residual_focus(
+                    ground_truth, regression_pred, save_path=str(path6)
+                )
                 visualization_paths['regression_residual_focus'] = str(path6)
-                print(f"  💾 Saved: {path6.name}")
+            else:
+                fig6 = self.visualizer.plot_regression_residual_focus(
+                    ground_truth, regression_pred
+                )
             
-            # 7. NEW: Generate diffusion prediction analysis
+            # 7. Generate diffusion prediction analysis
             print(f"🎨 Generating diffusion prediction analysis{aspect_info}...")
-            fig7 = self.visualizer.plot_diffusion_predictions(
-                ground_truth, diffusion_pred
-            )
             if save_plots:
                 path7 = self.visualizations_dir / "diffusion_analysis.png"
-                fig7.savefig(path7, dpi=150, bbox_inches='tight')
+                fig7 = self.visualizer.plot_diffusion_predictions(
+                    ground_truth, diffusion_pred, save_path=str(path7)
+                )
                 visualization_paths['diffusion_analysis'] = str(path7)
-                print(f"  💾 Saved: {path7.name}")
+            else:
+                fig7 = self.visualizer.plot_diffusion_predictions(
+                    ground_truth, diffusion_pred
+                )
             
-            # 8. NEW: Generate focused diffusion residual analysis
+            # 8. Generate focused diffusion residual analysis
             print(f"🎨 Generating diffusion residual focus{aspect_info}...")
-            fig8 = self.visualizer.plot_diffusion_residual_focus(
-                ground_truth, diffusion_pred
-            )
             if save_plots:
                 path8 = self.visualizations_dir / "diffusion_residual_focus.png"
-                fig8.savefig(path8, dpi=150, bbox_inches='tight')
+                fig8 = self.visualizer.plot_diffusion_residual_focus(
+                    ground_truth, diffusion_pred, save_path=str(path8)
+                )
                 visualization_paths['diffusion_residual_focus'] = str(path8)
-                print(f"  💾 Saved: {path8.name}")
+            else:
+                fig8 = self.visualizer.plot_diffusion_residual_focus(
+                    ground_truth, diffusion_pred
+                )
             
             # Store visualization information
             self.results['visualizations'] = {
@@ -937,17 +951,23 @@ class ExperimentManager:
                     'regression_residual_focus': 'Focused regression residual analysis with distributions',
                     'diffusion_analysis': 'Diffusion model predictions and residual analysis', 
                     'diffusion_residual_focus': 'Focused diffusion residual analysis with distributions'
-                }
+                },
+                'subplot_folders_created': save_plots  # Track if subplot folders were created
             }
             
             print(f"✅ Comprehensive visualization generation completed")
             if save_plots:
                 print(f"📁 Saved {len(visualization_paths)} plots to: {self.visualizations_dir}")
+                print(f"📂 Individual subplot folders created for each figure")
                 if self.results['visualizations']['aspect_ratio_applied']:
                     print(f"📐 Aspect ratio correction applied: {self.results['visualizations']['aspect_ratio_factor']:.1f}x factor")
                 print("📋 Generated visualizations:")
                 for name, description in self.results['visualizations']['description'].items():
                     print(f"  • {name}: {description}")
+                print("📋 Subplot organization:")
+                for name in self.results['visualizations']['figures_generated']:
+                    if name in visualization_paths:
+                        print(f"  • {name}/: Individual clean subplots + metadata")
             
             return True
             
