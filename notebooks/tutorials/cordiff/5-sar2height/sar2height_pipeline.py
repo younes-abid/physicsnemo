@@ -64,6 +64,7 @@ class PipelineConfig:
     
     # Processing parameters
     patch_size: int = 432
+    patch_stride: Optional[int] = None  # Stride between patches (None = no overlap)
     process_all_files: bool = True
     max_files_to_process: int = 14
     override_existing: bool = False  # New parameter for skipping existing outputs
@@ -300,7 +301,8 @@ class SAR2HeightPipeline:
                              max_files: Optional[int] = None,
                              enabled_features: Optional[List[str]] = None,
                              save_visualizations: Optional[bool] = None,
-                             patch_size: Optional[int] = None) -> GenerationResults:
+                             patch_size: Optional[int] = None,
+                             patch_stride: Optional[int] = None) -> GenerationResults:
         """
         Phase 2: Generate complete patches without filtering using multiprocessing.
         
@@ -310,6 +312,7 @@ class SAR2HeightPipeline:
             enabled_features: Override config setting for features to extract
             save_visualizations: Override config setting for visualizations
             patch_size: Override config setting for patch size
+            patch_stride: Override config setting for patch stride
             
         Returns:
             GenerationResults: Results of patch generation
@@ -341,6 +344,7 @@ class SAR2HeightPipeline:
             features = enabled_features if enabled_features is not None else self.config.enabled_features
             save_viz = save_visualizations if save_visualizations is not None else self.config.save_individual_visualizations
             p_size = patch_size if patch_size is not None else self.config.patch_size
+            p_stride = patch_stride if patch_stride is not None else self.config.patch_stride
             
             n_pairs = len(self.data_loader.file_pairs)
             
@@ -360,6 +364,7 @@ class SAR2HeightPipeline:
                 files_to_process=files_to_process,
                 features=features,
                 patch_size=p_size,
+                patch_stride=p_stride,
                 save_viz=save_viz
             )
             
@@ -729,6 +734,7 @@ class SAR2HeightPipeline:
 def create_pipeline_config(raw_data_dir: str,
                           output_base_dir: str,
                           patch_size: int = 432,
+                          patch_stride: Optional[int] = None, 
                           enabled_features: Optional[List[str]] = None,
                           process_all_files: bool = True,
                           save_visualizations: bool = False,
@@ -740,6 +746,7 @@ def create_pipeline_config(raw_data_dir: str,
         raw_data_dir: Directory containing SAR and DSM TIFF files
         output_base_dir: Base output directory  
         patch_size: Size of patches (default 432)
+        patch_stride: Stride between patches (None = no overlap)
         enabled_features: List of SAR features to extract
         process_all_files: Whether to process all available files
         save_visualizations: Whether to save visualization outputs
@@ -758,6 +765,7 @@ def create_pipeline_config(raw_data_dir: str,
         visualization_dir=str(output_base / "visualizations") if save_visualizations else None,
         log_dir=str(output_base / "logs"),
         patch_size=patch_size,
+        patch_stride=patch_stride,
         enabled_features=enabled_features,
         process_all_files=process_all_files,
         save_individual_visualizations=save_visualizations,

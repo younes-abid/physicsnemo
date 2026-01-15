@@ -59,16 +59,16 @@ class PatchGenerator:
     - Calculate raw quality metrics without filtering
     """
     
-    def __init__(self, patch_size: int = 432, patch_stride: Optional[int] = None):
+    def __init__(self, patch_size: int = 432, stride: Optional[int] = None):
         """
         Initialize the patch generator.
         
         Args:
             patch_size (int): Size of square patches (default: 432 for cordiff)
-            patch_stride (int, optional): Stride between patches. If None, uses patch_size (no overlap)
+            stride (int, optional): Stride between patches. If None, uses patch_size (no overlap)
         """
         self.patch_size = patch_size
-        self.patch_stride = patch_stride if patch_stride is not None else patch_size
+        self.stride = stride if stride is not None else patch_size
         
     def calculate_patch_grid(self, data_shape: Tuple[int, int]) -> Tuple[List[int], List[int], int]:
         """
@@ -86,8 +86,8 @@ class PatchGenerator:
         height, width = data_shape
         
         # Calculate patch positions
-        row_starts = list(range(0, height - self.patch_size + 1, self.patch_stride))
-        col_starts = list(range(0, width - self.patch_size + 1, self.patch_stride))
+        row_starts = list(range(0, height - self.patch_size + 1, self.stride))
+        col_starts = list(range(0, width - self.patch_size + 1, self.stride))
         
         # If the last patch doesn't fit perfectly, add it
         if len(row_starts) == 0 or row_starts[-1] + self.patch_size < height:
@@ -105,7 +105,7 @@ class PatchGenerator:
         n_patches = len(row_starts) * len(col_starts)
         
         logger.info(f"Patch grid: {len(row_starts)} rows × {len(col_starts)} cols = {n_patches} patches")
-        logger.info(f"Data shape: {data_shape}, Patch size: {self.patch_size}, Stride: {self.patch_stride}")
+        logger.info(f"Data shape: {data_shape}, Patch size: {self.patch_size}, Stride: {self.stride}")
         
         return row_starts, col_starts, n_patches
     
@@ -399,7 +399,7 @@ def generate_all_patches_from_data(features: np.ndarray,
                                   dsm: np.ndarray, 
                                   metadata: Dict,
                                   patch_size: int = 432,
-                                  patch_stride: Optional[int] = None) -> List[Dict]:
+                                  stride: Optional[int] = None) -> List[Dict]:
     """
     Convenience function to generate ALL patches from feature and DSM data without filtering.
     
@@ -408,12 +408,12 @@ def generate_all_patches_from_data(features: np.ndarray,
         dsm (np.ndarray): DSM height data
         metadata (Dict): Spatial metadata including CRS and transform
         patch_size (int): Patch size (default: 432)
-        patch_stride (int, optional): Stride between patches
+        stride (int, optional): Stride between patches
         
     Returns:
         List[Dict]: List of ALL generated patches with complete metadata
     """
-    generator = PatchGenerator(patch_size, patch_stride)
+    generator = PatchGenerator(patch_size, stride)
     
     # Pad data if necessary
     features_padded, features_padded_flag = generator.pad_data_if_needed(features)
@@ -436,12 +436,12 @@ def _generate_patches_worker(args):
     Worker function for multiprocessing patch generation.
     
     Args:
-        args: Tuple containing (pair_index, config, file_pairs_info, features, patch_size, patch_stride, save_viz)
+        args: Tuple containing (pair_index, config, file_pairs_info, features, patch_size, save_viz)
         
     Returns:
         Dict: Processing result with success status and details
     """
-    pair_index, config_dict, file_pairs_info, features, patch_size, patch_stride, save_viz = args
+    pair_index, config_dict, file_pairs_info, features, patch_size, save_viz = args
     
     # Import required modules in worker process
     try:
@@ -517,7 +517,7 @@ def _generate_patches_worker(args):
             dsm=dsm_coreg,
             metadata=common_meta,
             patch_size=patch_size,
-            patch_stride=patch_stride  # ONLY CHANGE: Added patch_stride support
+            stride=None
         )
         
         result['n_patches_generated'] = len(all_patches)
@@ -533,8 +533,7 @@ def _generate_patches_worker(args):
             'original_dsm_shape': dsm_data.shape,
             'coregistered_shape': intensity_coreg.shape,
             'n_features_extracted': len(feature_names),
-            'patch_size': patch_size,
-            'patch_stride': patch_stride  # ONLY CHANGE: Added patch_stride to metadata
+            'patch_size': patch_size
         }
         
         output_file = save_all_patches_to_directory(
@@ -546,8 +545,7 @@ def _generate_patches_worker(args):
             global_attrs={
                 'processing_date': datetime.now().isoformat(),
                 'enabled_features': ','.join(features),
-                'filtering_applied': False,
-                'patch_stride': patch_stride or patch_size  # ONLY CHANGE: Added patch_stride to global attrs
+                'filtering_applied': False
             }
         )
         
@@ -562,9 +560,103 @@ def _generate_patches_worker(args):
     return result
 
 
-def _generate_patches_with_multiprocessing(data_loader, config_dict, files_to_process, features, 
-                                         patch_size, patch_stride, save_viz, n_workers,
-                                         output_files, stats, failed_files):
+def generate_full_patches_pipeline(data_loader, 
+                                  config_dict: Dict,
+                                  files_to_process: List[int],
+                                  features: List[str],
+                                  patch_size: int = 432,
+                                  save_viz: bool = False) -> GenerationResults:
+    """
+    Main function to generate full patches from file pairs using multiprocessing.
+    
+    Args:
+        data_loader: SAR data loader instance
+        config_dict: Configuration dictionary
+        files_to_process: List of file pair indices to process
+        features: List of feature names to extract
+        patch_size: Size of patches to generate
+        save_viz: Whether to save visualizations
+        
+    Returns:
+        GenerationResults: Results of patch generation
+    """
+    start_time = time.time()
+    
+    try:
+        # Determine processing mode
+        use_multiprocessing = config_dict.get('use_multiprocessing', True)
+        max_workers = config_dict.get('max_workers', psutil.cpu_count(logical=True))
+        use_mp = use_multiprocessing and len(files_to_process) > 1
+        n_workers = min(max_workers, len(files_to_process)) if use_mp else 1
+        
+        print(f"🚀 Processing {len(files_to_process)} file pairs...")
+        print(f"  • Patch size: {patch_size}×{patch_size}")
+        print(f"  • Features: {len(features)} enabled")
+        print(f"  • Visualizations: {'ON' if save_viz else 'OFF'}")
+        print(f"  • Multiprocessing: {'ON' if use_mp else 'OFF'}")
+        if use_mp:
+            print(f"  • Workers: {n_workers}/{psutil.cpu_count(logical=True)} CPU cores")
+            print(f"  • Available memory: {psutil.virtual_memory().available / (1024**3):.1f} GB")
+        print("-" * 60)
+        
+        # Process files - use mutable containers for statistics
+        output_files = []
+        stats = {'successful_files': 0, 'total_patches_generated': 0}
+        failed_files = []
+        
+        if use_mp:
+            # Multiprocessing mode
+            _generate_patches_with_multiprocessing(
+                data_loader, config_dict, files_to_process, features, patch_size, save_viz, n_workers,
+                output_files, stats, failed_files
+            )
+        else:
+            # Sequential mode
+            _generate_patches_sequentially(
+                data_loader, config_dict, files_to_process, features, patch_size, save_viz,
+                output_files, stats, failed_files
+            )
+        
+        # Create and return results
+        total_time = time.time() - start_time
+        
+        # Get skipped count from stats (set by processing methods)
+        files_skipped = stats.get('skipped_files', 0)
+        
+        return GenerationResults(
+            success=len(failed_files) == 0,
+            files_processed=len(files_to_process),
+            files_successful=stats['successful_files'],
+            files_failed=len(failed_files),
+            files_skipped=files_skipped,
+            total_patches_generated=stats['total_patches_generated'],
+            output_files=output_files,
+            generation_time=total_time,
+            failed_files=failed_files,
+            error=None if len(failed_files) == 0 else f"Failed to process {len(failed_files)} files"
+        )
+        
+    except Exception as e:
+        generation_time = time.time() - start_time
+        error_msg = f"Patch generation failed: {str(e)}"
+        logger.error(error_msg)
+        
+        return GenerationResults(
+            success=False,
+            files_processed=0,
+            files_successful=0,
+            files_failed=0,
+            files_skipped=0,
+            total_patches_generated=0,
+            output_files=[],
+            generation_time=generation_time,
+            failed_files=[],
+            error=error_msg
+        )
+
+
+def _generate_patches_with_multiprocessing(data_loader: SARDataLoader, config_dict: Dict, files_to_process: List[int], features: List[str], patch_size: int, save_viz: bool, n_workers: int,
+                                output_files: List[str], stats: Dict[str, int], failed_files: List[str]):
     """Generate patches using multiprocessing."""
     print(f"🔄 Starting multiprocessing with {n_workers} workers...")
     
@@ -572,7 +664,7 @@ def _generate_patches_with_multiprocessing(data_loader, config_dict, files_to_pr
     file_pairs_info = [data_loader.file_pairs[i] for i in files_to_process]
     
     worker_args = [
-        (i, config_dict, file_pairs_info, features, patch_size, patch_stride, save_viz) 
+        (i, config_dict, file_pairs_info, features, patch_size, save_viz) 
         for i in files_to_process
     ]
     
@@ -643,9 +735,8 @@ def _generate_patches_with_multiprocessing(data_loader, config_dict, files_to_pr
     print(f"\n✅ Multiprocessing completed in {time.time() - start_time:.1f}s")
 
 
-def _generate_patches_sequentially(data_loader, config_dict, files_to_process, features,
-                                 patch_size, patch_stride, save_viz,
-                                 output_files, stats, failed_files):
+def _generate_patches_sequentially(data_loader: SARDataLoader, config_dict: Dict, files_to_process: List[int], features: List[str], patch_size: int, save_viz: bool,
+                        output_files: List[str], stats: Dict[str, int], failed_files: List[str]):
     """Generate patches sequentially (original behavior)."""
     print("🔄 Processing files sequentially...")
     
@@ -661,10 +752,10 @@ def _generate_patches_sequentially(data_loader, config_dict, files_to_process, f
         print(f"\n🔄 Processing {i+1}/{len(files_to_process)}: {pair_name}")
         
         try:
-            result = _process_single_file_pair_sequential(
+            result = _process_single_file_pair(
                 data_loader, config_dict, pair_idx, coregister_file_pair, SARFeatureExtractor, 
                 generate_all_patches_from_data, save_all_patches_to_directory,
-                features, patch_size, patch_stride, save_viz  # ONLY CHANGE: Added patch_stride
+                features, patch_size, save_viz
             )
             
             if result['success']:
@@ -702,8 +793,8 @@ def _generate_patches_sequentially(data_loader, config_dict, files_to_process, f
     stats['skipped_files'] = skipped_files
 
 
-def _process_single_file_pair_sequential(data_loader, config_dict, pair_index, coregister_func, extractor_class, 
-                             generate_func, save_func, features, patch_size, patch_stride, save_viz):
+def _process_single_file_pair(data_loader: SARDataLoader, config_dict: Dict, pair_index: int, coregister_func, extractor_class, 
+                             generate_func, save_func, features: List[str], patch_size: int, save_viz: bool) -> Dict:
     """Process a single file pair for patch generation."""
     pair_info = data_loader.file_pairs[pair_index]
     base_name = pair_info['base_name']
@@ -758,7 +849,7 @@ def _process_single_file_pair_sequential(data_loader, config_dict, pair_index, c
             dsm=dsm_coreg,
             metadata=common_meta,
             patch_size=patch_size,
-            patch_stride=patch_stride  # ONLY CHANGE: Added patch_stride support
+            stride=None
         )
         
         result['n_patches_generated'] = len(all_patches)
@@ -775,8 +866,7 @@ def _process_single_file_pair_sequential(data_loader, config_dict, pair_index, c
             'original_dsm_shape': dsm_data.shape,
             'coregistered_shape': intensity_coreg.shape,
             'n_features_extracted': len(feature_names),
-            'patch_size': patch_size,
-            'patch_stride': patch_stride  # ONLY CHANGE: Added patch_stride to metadata
+            'patch_size': patch_size
         }
         
         output_file = save_func(
@@ -788,8 +878,7 @@ def _process_single_file_pair_sequential(data_loader, config_dict, pair_index, c
             global_attrs={
                 'processing_date': datetime.now().isoformat(),
                 'enabled_features': ','.join(features),
-                'filtering_applied': False,
-                'patch_stride': patch_stride or patch_size  # ONLY CHANGE: Added patch_stride to global attrs
+                'filtering_applied': False
             }
         )
         
@@ -802,104 +891,6 @@ def _process_single_file_pair_sequential(data_loader, config_dict, pair_index, c
         result['processing_time'] = time.time() - start_time
     
     return result
-
-
-def generate_full_patches_pipeline(data_loader, 
-                                  config_dict: Dict,
-                                  files_to_process: List[int],
-                                  features: List[str],
-                                  patch_size: int = 432,
-                                  patch_stride: Optional[int] = None,
-                                  save_viz: bool = False) -> GenerationResults:
-    """
-    Main function to generate full patches from file pairs using multiprocessing.
-    
-    Args:
-        data_loader: SAR data loader instance
-        config_dict: Configuration dictionary
-        files_to_process: List of file pair indices to process
-        features: List of feature names to extract
-        patch_size: Size of patches to generate
-        patch_stride: Stride between patches (None = no overlap)
-        save_viz: Whether to save visualizations
-        
-    Returns:
-        GenerationResults: Results of patch generation
-    """
-    start_time = time.time()
-    
-    try:
-        # Determine processing mode
-        use_multiprocessing = config_dict.get('use_multiprocessing', True)
-        max_workers = config_dict.get('max_workers', psutil.cpu_count(logical=True))
-        use_mp = use_multiprocessing and len(files_to_process) > 1
-        n_workers = min(max_workers, len(files_to_process)) if use_mp else 1
-        
-        print(f"🚀 Processing {len(files_to_process)} file pairs...")
-        print(f"  • Patch size: {patch_size}×{patch_size}")
-        print(f"  • Patch stride: {patch_stride if patch_stride is not None else patch_size} (overlap: {'Yes' if patch_stride is not None and patch_stride < patch_size else 'No'})")
-        print(f"  • Features: {len(features)} enabled")
-        print(f"  • Visualizations: {'ON' if save_viz else 'OFF'}")
-        print(f"  • Multiprocessing: {'ON' if use_mp else 'OFF'}")
-        if use_mp:
-            print(f"  • Workers: {n_workers}/{psutil.cpu_count(logical=True)} CPU cores")
-            print(f"  • Available memory: {psutil.virtual_memory().available / (1024**3):.1f} GB")
-        print("-" * 60)
-        
-        # Process files - use mutable containers for statistics
-        output_files = []
-        stats = {'successful_files': 0, 'total_patches_generated': 0}
-        failed_files = []
-        
-        if use_mp:
-            # Multiprocessing mode
-            _generate_patches_with_multiprocessing(
-                data_loader, config_dict, files_to_process, features, patch_size, patch_stride, save_viz, n_workers,
-                output_files, stats, failed_files
-            )
-        else:
-            # Sequential mode
-            _generate_patches_sequentially(
-                data_loader, config_dict, files_to_process, features, patch_size, patch_stride, save_viz,
-                output_files, stats, failed_files
-            )
-        
-        # Create and return results
-        total_time = time.time() - start_time
-        
-        # Get skipped count from stats (set by processing methods)
-        files_skipped = stats.get('skipped_files', 0)
-        
-        return GenerationResults(
-            success=len(failed_files) == 0,
-            files_processed=len(files_to_process),
-            files_successful=stats['successful_files'],
-            files_failed=len(failed_files),
-            files_skipped=files_skipped,
-            total_patches_generated=stats['total_patches_generated'],
-            output_files=output_files,
-            generation_time=total_time,
-            failed_files=failed_files,
-            error=None if len(failed_files) == 0 else f"Failed to process {len(failed_files)} files"
-        )
-        
-    except Exception as e:
-        generation_time = time.time() - start_time
-        error_msg = f"Patch generation failed: {str(e)}"
-        logger.error(error_msg)
-        
-        return GenerationResults(
-            success=False,
-            files_processed=0,
-            files_successful=0,
-            files_failed=0,
-            files_skipped=0,
-            total_patches_generated=0,
-            output_files=[],
-            generation_time=generation_time,
-            failed_files=[],
-            error=error_msg
-        )
 
 
 if __name__ == "__main__":
