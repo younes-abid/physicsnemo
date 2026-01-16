@@ -1050,11 +1050,12 @@ class ExperimentManager:
             return False
         
         # Step 6: Visualization Generation
-        if self.generate_visualizations(save_plots):
-            steps_completed.append("visualizations")
-        else:
-            print("❌ Experiment failed at visualization step")
-            return False
+        if save_plots:
+            if self.generate_visualizations(save_plots):
+                steps_completed.append("visualizations")
+            else:
+                print("❌ Experiment failed at visualization step")
+                return False
         
         # Step 7: Results Saving (NEW: Proper file formats)
         if self.save_results():
