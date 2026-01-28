@@ -50,7 +50,9 @@ We should be easily able to pick another data if we want in the script by changi
 NOTE we will run always the scripts inside the docker container as explained in the Younes_readme.md
 Note we also should properly set the output paths inside the sctipt the same way we set it in here /home/younes.abid/git/physicsnemo/scripts/train/weather/diffusion/train_diffusion_normal_Fog_index.sh
 So our script should be easily maintainable and we should be able to change the paths of the data and the output checkpoints easily
-
+-----
+Questions: What about data that has no output group. meaning that has no ground truth. Can we still use the generation script to generate predictions only based on the input group?
+Should we create a new script for that or can we modify the existing one to handle that case?
 
 
 # Oil tank volume prediction
