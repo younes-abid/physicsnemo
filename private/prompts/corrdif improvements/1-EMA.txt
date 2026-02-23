@@ -1,0 +1,11 @@
+ok create a folder 1-....
+for ### GAP 1: Exponential Moving Average (EMA) — NOT IMPLEMENTED
+under /home/younes.abid/git/physicsnemo/private/doc/cordiff/improvements/1-Easy Improvements
+
+under that folder create 0-background/ folder this will be where we will put all material to teach me the background and theory for this improvement
+then create a folder 1-theory here we will explain the improvement itself and where we will interven in our cordiff model and all necessary deeply related to corrdiff theory
+then create a folder 2-code here we will put the code uner 2-code/ we will copy the original python scripts from corrdiff under original/
+then we will make a version under v-1/ where we put the modified code
+the we will have under 2-code/v-1/  very very tiny bash script apply-change.sh to copy the python script from 2-code/v-1 to their correct location in our repo to be used in the training next time
+it is like replacing the original by the updated code 
+then we will have another script undo-change.sh to copy the original and put them in their original places

@@ -180,7 +180,7 @@ def main(cfg: DictConfig) -> None:
             solver=cfg.sampler.solver,
         )
     elif cfg.sampler.type == "stochastic":
-        sampler_fn = partial(stochastic_sampler, patching=patching)
+        sampler_fn = partial(stochastic_sampler, patching=patching, num_steps=cfg.sampler.num_steps)
     else:
         raise ValueError(f"Unknown sampling method {cfg.sampling.type}")
 

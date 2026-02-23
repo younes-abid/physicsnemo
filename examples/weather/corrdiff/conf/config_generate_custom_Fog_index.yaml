@@ -1,0 +1,112 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+hydra:
+    job:
+          chdir: false
+          name: generate_custom_Fog_index
+    run:
+          dir: ./outputs/${hydra:job.name}
+    searchpath:
+          - pkg://conf/base # Do not modify
+
+# Base parameters for dataset, model, and generation
+defaults:
+
+    - dataset: custom
+    # The dataset type for generation.
+    # Using custom dataset type for Fog_index predictions
+
+    - generation: non_patched
+    # The base generation parameters.
+    # Accepted values:
+    #     `patched`: base parameters for a patch-based model
+    #     `non_patched`: base parameters for a non-patched model
+
+    - _self_
+
+# Dataset parameters for custom Fog_index dataset
+# These parameters will be passed to the custom dataset class
+dataset:
+    data_path: /mnt/storage/younes.abid/physicsnemo/data/custom_data_2/ERA5_WRF_combined_concatenated_432/2024-04-30_2024-05-30_21.nc
+    # Path to .nc data file for generation
+    stats_path: /mnt/storage/younes.abid/physicsnemo/data/custom_data_2/stats_432/stat.json
+    # Path to json stats file
+    input_variables: ["t_850", "t_500", "z_850", "z_500", "u_850", "u_500", "v_850", "v_500", "u10", "v10", "t2m", "d2m", "skt", "sp", "tcwv", "tp"]
+    # Input variables matching EXACTLY what was used during training (16 variables only - NO sst)
+    # Regression model expects: 16 input + 4 grid + 1 output = 21 channels
+    # Diffusion model expects: 22 channels (there's a mismatch between the two models)
+    output_variables: ["Fog_index"]
+    # Output variable for Fog_index prediction
+    invariant_variables: []
+    # Optional: leave empty if not used
+
+# Generation parameters
+generation:
+    num_ensembles: 4
+    # int, number of ensembles to generate per input
+    seed_batch_size: 1
+    # int, size of the batched inference - MUST be 1 for CorrDiff
+    times_range: null
+    # Disabled times_range to avoid time mismatch issues
+    times:
+        - "2024-04-30T00:00:00"
+        - "2024-04-30T01:00:00"
+        - "2024-04-30T02:00:00"
+        - "2024-04-30T03:00:00"
+        - "2024-04-30T04:00:00"
+        - "2024-04-30T05:00:00"
+        - "2024-04-30T06:00:00"
+        - "2024-04-30T07:00:00"
+    # Specific times that should be available in the data file
+    # Start with common daily timestamps that likely exist in your 21-day dataset
+    
+    inference_mode: "diffusion"
+    # Inference mode: "regression", "diffusion", or "all" (regression + diffusion)
+    # Testing diffusion mode to see if we get the channel mismatch error
+    
+    hr_mean_conditioning: false
+    # Whether to use high-resolution mean conditioning
+    
+    io:
+        res_ckpt_filename: /app/checkpoints/Fog_index/checkpoints_diffusion/EDMPrecondSuperResolution.0.590000.mdlus
+        # Path to checkpoint file for the diffusion model (will be overridden by script)
+        reg_ckpt_filename: /app/checkpoints/Fog_index/checkpoints_regression/UNet.0.390000.mdlus
+        # Path to checkpoint file for the regression model (will be overridden by script)
+        output_filename: /app/outputs/generation/Fog_index/corrdiff_Fog_index_predictions.nc
+        # Output filename (will be overridden by script with timestamp)
+    
+    perf:
+        force_fp16: false
+        # Force FP16 precision for faster inference
+        use_torch_compile: false
+        # Use torch.compile for potential speedup
+        num_writer_workers: 4
+        # Number of worker threads for writing output
+
+# Sampler configuration
+sampler:
+    type: "stochastic"
+    # Sampling method: "deterministic" or "stochastic"
+    num_steps: 2
+    # Number of sampling steps for diffusion
+    solver: "euler"
+    # Solver type for deterministic sampling
+
+# Parameters for wandb logging
+wandb:
+    mode: offline
+    # Configure whether to use wandb: "offline", "online", "disabled"

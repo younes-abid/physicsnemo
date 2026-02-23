@@ -46,7 +46,7 @@ We have the 2 needed checkpoints under
 So the checkpoints paths will to the last checkpoint in the folder
 
 The path to the dataset is under /home/younes.abid/git/physicsnemo/data/custom_data_2/ERA5_WRF_combined_concatenated_432/*.nc and we will use the last data which is /home/younes.abid/git/physicsnemo/data/custom_data_2/ERA5_WRF_combined_concatenated_432/2024-04-30_2024-05-30_21.nc
-We should be easily able to pick another data if we want in the script by changinf the name of the data file in the script.
+We should be easily able to pick another data if we want in the script by changing the name of the data file in the script.
 NOTE we will run always the scripts inside the docker container as explained in the Younes_readme.md
 Note we also should properly set the output paths inside the sctipt the same way we set it in here /home/younes.abid/git/physicsnemo/scripts/train/weather/diffusion/train_diffusion_normal_Fog_index.sh
 So our script should be easily maintainable and we should be able to change the paths of the data and the output checkpoints easily
