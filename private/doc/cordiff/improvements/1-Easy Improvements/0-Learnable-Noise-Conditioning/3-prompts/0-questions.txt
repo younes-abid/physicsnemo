@@ -1,0 +1,40 @@
+I am reading this /home/younes.abid/git/physicsnemo/private/doc/cordiff/improvements/1-Easy Improvements/0-Learnable-Noise-Conditioning/0-background/01-what-is-noise-conditioning/02-sigma-the-noise-level.md
+
+I have this questions
+please generate a document under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/improvements/1-Easy Improvements/0-Learnable-Noise-Conditioning/0-background/01-what-is-noise-conditioning/02.1-questions.md
+where you answer my question and clarify this for me
+
+ok correct my understanding and clear it 
+diffusion model while training (general idea then we well see how corrdiff does also because there might be small differences)
+we take clean image  then we generate random noise when noise is discrete we take random step id
+we generate the noise using the formula (give the formula) we add it to the clean image then we train the model to remove that noise in one single step. we train it to move to step i-1 that is all (training is always one step ) we choose random step from 1 to n
+we move the clean image into that step by adding noise (use the formula) then we ask the model to predict step i-1
+this is for discrete
+for continues I have no idea how it works
+for corrdiff I have no idea how it works
+
+when we predict in production
+we actually for discrete will repeat the go back from noise to clean n times
+n is a parameter we choose as input 
+the model in eval (prediction mode) we get as input the noisy image 
+here I do not know where sigma is used and how still missing the full idea and how this works
+the model predict a noise 
+we remove it from the input image
+we add small extra noise
+we feed the new image as imput again and repeat 
+
+
+please clear all of this for me
+you are wise experimented teacher
+you explain the idea nicely so I have full picture
+you mention math equations as well and explain the parameters
+
+you clarify this for
+diffusion in general
+discrete
+continues
+corrdiff
+maybe other variation famous like stable or something famous in the SOTA if there is some differences
+also what is EDM what it standsfor what it does why corddiff uses it and how
+please strucutre and explain all of this
