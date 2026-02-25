@@ -109,5 +109,43 @@ The **score-based generative modeling** framework (Song & Ermon, 2019-2021) view
 6. How does Langevin dynamics use the score to generate samples?
 7. Why are DDPM (noise prediction) and score-based models (score prediction) equivalent?
 
+### Answers
+
+1. **The score function is the gradient of the log-probability density with respect to the data:**
+   $$\mathbf{s}(\mathbf{x}) = \nabla_{\mathbf{x}} \log p(\mathbf{x})$$
+   It is a **vector field** — at every point $\mathbf{x}$ in data space, the score assigns a vector with the same dimensionality as $\mathbf{x}$. This vector points in the direction of steepest increase of the log-density and has magnitude proportional to how steeply the log-density is changing. For a 64×64 image (4096 dimensions), the score is a 4096-dimensional vector.
+
+2. **The score vector points toward higher-probability regions — "uphill" in the density landscape.** If you imagine the probability distribution as a terrain where peaks correspond to likely data and valleys to unlikely data, the score at any point is like a compass arrow pointing toward the nearest peak. At a data point far from the mode, the score has large magnitude pointing strongly toward the mode. At the mode itself, the score is zero (you're already at the top). This "pointing toward data" property is exactly what makes it useful for generation: following score vectors from random noise leads you toward realistic data.
+
+3. For $p(x) = \mathcal{N}(\mu, \sigma^2)$:
+   $$\log p(x) = -\frac{(x - \mu)^2}{2\sigma^2} + \text{const}$$
+   $$\nabla_x \log p(x) = -\frac{x - \mu}{\sigma^2}$$
+   
+   The score points from $x$ toward the mean $\mu$. If $x > \mu$, the score is negative (pointing left toward $\mu$); if $x < \mu$, it's positive (pointing right toward $\mu$). The magnitude is proportional to the distance from the mean and inversely proportional to $\sigma^2$ — the tighter the distribution, the stronger the pull toward the center. At $x = \mu$, the score is zero.
+
+4. **The score is proportional to the negative noise, scaled by the noise standard deviation:**
+   $$\nabla_{\mathbf{x}_t} \log q(\mathbf{x}_t \mid \mathbf{x}_0) = -\frac{\boldsymbol{\epsilon}}{\sqrt{1 - \bar{\alpha}_t}}$$
+   
+   Or in EDM notation where $\mathbf{x} = \mathbf{x}_0 + \sigma\boldsymbol{\epsilon}$:
+   $$\nabla_{\mathbf{x}} \log p(\mathbf{x} \mid \mathbf{x}_0) = -\frac{\boldsymbol{\epsilon}}{\sigma}$$
+   
+   The score points in the **opposite direction of the noise** — toward the clean data and away from the corruption. This makes intuitive sense: the noise displaced the data in direction $\boldsymbol{\epsilon}$, and the score says "go back the other way" ($-\boldsymbol{\epsilon}$), scaled by the noise level.
+
+5. **Because the gradient of a constant is zero.** If $p(\mathbf{x}) = p^*(\mathbf{x})/Z$, then:
+   $$\nabla_{\mathbf{x}} \log p(\mathbf{x}) = \nabla_{\mathbf{x}} \log p^*(\mathbf{x}) - \underbrace{\nabla_{\mathbf{x}} \log Z}_{= 0}$$
+   
+   $Z$ is a constant (it doesn't depend on $\mathbf{x}$), so its gradient w.r.t. $\mathbf{x}$ is zero. This is enormously important because computing $Z = \int p^*(\mathbf{x})\,d\mathbf{x}$ is intractable for complex distributions — it requires integrating over all of data space. The score sidesteps this entirely, making it possible to work with unnormalized densities. This is why score-based methods can handle distributions where direct density evaluation is impossible.
+
+6. **Langevin dynamics iteratively updates a sample by taking small steps in the score direction plus random noise:**
+   $$\mathbf{x}_{i+1} = \mathbf{x}_i + \frac{\eta}{2} \nabla_{\mathbf{x}} \log p(\mathbf{x}_i) + \sqrt{\eta}\,\mathbf{z}_i, \quad \mathbf{z}_i \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
+   
+   Starting from any initialization (e.g., random noise), this process converges to a sample from $p(\mathbf{x})$ as the step size $\eta \to 0$ and the number of steps $\to \infty$. The score term $\frac{\eta}{2}\nabla_{\mathbf{x}} \log p(\mathbf{x}_i)$ pushes the sample toward high-probability regions (like gradient ascent on log-density), while the noise term $\sqrt{\eta}\,\mathbf{z}_i$ ensures proper exploration so we sample the full distribution rather than just collapsing to the mode. This is conceptually what diffusion models do during the reverse/generation process.
+
+7. **Because predicting noise and predicting the score differ only by a known scaling factor.** The relationship $\nabla_{\mathbf{x}_t} \log q(\mathbf{x}_t \mid \mathbf{x}_0) = -\boldsymbol{\epsilon}/\sqrt{1-\bar{\alpha}_t}$ means:
+   - A noise-prediction network $\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)$ trained with $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta\|^2$
+   - A score-prediction network $\mathbf{s}_\theta(\mathbf{x}_t, t)$ trained with $\|\nabla_{\mathbf{x}_t}\log q - \mathbf{s}_\theta\|^2$
+   
+   are related by $\mathbf{s}_\theta = -\boldsymbol{\epsilon}_\theta / \sqrt{1-\bar{\alpha}_t}$. The training objectives are identical up to a timestep-dependent constant. This is the key unifying insight: Ho et al.'s DDPM (2020) and Song & Ermon's score-based models (2019–2021) are the same framework expressed in different notation. DDPM asks "what noise was added?", score-based models ask "which direction leads to cleaner data?" — same question, different phrasing.
+
 ---
 *Previous: [16-reparameterization-trick.md](16-reparameterization-trick.md) · Next: [18-stochastic-differential-equation.md](18-stochastic-differential-equation.md)*

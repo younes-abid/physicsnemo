@@ -93,5 +93,27 @@ If we can learn to denoise perfectly at every noise level, we can start from pur
 4. Why is adding noise easy but removing noise hard?
 5. What does the neural network learn to predict in the noise prediction ($\boldsymbol{\epsilon}$-prediction) formulation?
 
+### Answers
+
+1. **Gaussian noise** $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$, with three key properties:
+   - **Zero mean**: the noise has no systematic bias — it's equally likely to push pixel values up or down.
+   - **Unit variance**: each component has standard deviation 1 (before scaling by $\sigma$).
+   - **Independence**: noise in each dimension (pixel) is independent of every other — there's no spatial correlation or structure in the noise itself.
+   
+   Gaussian noise is used because it has beautiful mathematical properties (closed-form KL divergences, easy reparameterization, the central limit theorem ensures sums of many small perturbations converge to Gaussians).
+
+2. **$\boldsymbol{\epsilon}$ is the actual noise vector** — it has the same dimensionality as the data (e.g., for a 64×64 image, $\boldsymbol{\epsilon} \in \mathbb{R}^{4096}$). It's the specific random perturbation drawn for a particular sample. **$\sigma$ is a scalar** that controls the *intensity* (magnitude) of the noise. The noisy data is $\mathbf{x}_{\text{noisy}} = \mathbf{x}_{\text{clean}} + \sigma \cdot \boldsymbol{\epsilon}$, so $\sigma$ scales how much of $\boldsymbol{\epsilon}$ is actually applied. Think of $\boldsymbol{\epsilon}$ as the "shape" of the noise and $\sigma$ as its "volume."
+
+3. **The image transitions from perfectly clean to pure random static:**
+   - $\sigma \approx 0$: the image is essentially unchanged — all fine details are intact.
+   - Small $\sigma$: slight grain/fuzz appears, but the image is fully recognizable.
+   - Medium $\sigma$: fine details (textures, edges) are lost, but large-scale structure (shapes, colors) is still visible.
+   - Large $\sigma$: the image is mostly destroyed — only the faintest ghost of structure might remain.
+   - $\sigma \to \infty$: the image is completely obliterated — the result is indistinguishable from pure Gaussian noise. No information about the original image survives.
+
+4. **Adding noise is easy because it requires zero knowledge of the data** — just sample random numbers and add them. Any algorithm can do it; no learning needed. **Removing noise is hard because it requires understanding the *structure* of the data.** To denoise, you must know what "real" data looks like — what pixel patterns form valid images, what spatial correlations exist, what's physically plausible. This is implicit knowledge about the data distribution $p_{\text{data}}$, which can only be learned from examples. This asymmetry is exactly what diffusion models exploit.
+
+5. **The neural network predicts the specific noise vector $\boldsymbol{\epsilon}$ that was added to create $\mathbf{x}_t$ from $\mathbf{x}_0$.** Given the noisy input $\mathbf{x}_t$ and the timestep $t$, the network outputs $\hat{\boldsymbol{\epsilon}} = \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)$, which should approximate the true $\boldsymbol{\epsilon}$ that was sampled during the forward process. Once you know the noise, you can subtract it (with appropriate scaling) to recover the clean data. The training loss is simply $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2$.
+
 ---
 *Previous: [9-neural-network-as-function-approximator.md](9-neural-network-as-function-approximator.md) · Next: [11-signal-to-noise-ratio.md](11-signal-to-noise-ratio.md)*

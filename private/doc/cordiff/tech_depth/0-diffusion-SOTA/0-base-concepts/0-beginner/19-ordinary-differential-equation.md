@@ -107,5 +107,26 @@ This connection was made explicit by the Score SDE paper (Song et al., 2021).
 6. What ODE solver does EDM (Karras et al., 2022) use by default?
 7. What does "NFE" measure, and why does it matter?
 
+### Answers
+
+1. **Determinism vs. randomness.** An ODE is fully **deterministic** — given the same initial condition, the trajectory is always identical. An SDE includes a **random noise term** ($g(t)\,d\mathbf{w}$), so every run produces a different trajectory even from the same starting point. Mathematically, an ODE is an SDE with $g = 0$.
+
+2. **The Probability Flow ODE** is a deterministic ODE whose solution traces out the **same marginal distributions** $p_t(\mathbf{x})$ at every time $t$ as the corresponding reverse SDE. It is derived by replacing the stochastic noise term in the reverse SDE with an additional deterministic drift that depends on the score $\nabla_{\mathbf{x}} \log p_t(\mathbf{x})$:
+$$d\mathbf{x} = \left[f(\mathbf{x}, t) - \tfrac{1}{2}g(t)^2 \nabla_{\mathbf{x}} \log p_t(\mathbf{x})\right] dt$$
+The distributions match, but individual trajectories differ (deterministic vs. stochastic).
+
+3. **Three advantages of the PF-ODE:**
+   - **Deterministic sampling / reproducibility:** same starting noise always yields the same output, enabling reproducibility, smooth interpolation in latent space, and invertible encoding.
+   - **Faster sampling:** ODE solvers can take larger steps (no noise to fight against), so high-quality samples can be produced in 10–50 steps instead of ~1000.
+   - **Exact likelihood computation:** the PF-ODE defines a continuous normalizing flow, allowing exact log-likelihood computation via the instantaneous change-of-variables formula (rather than only a lower bound via the ELBO).
+
+4. **Because there is no stochastic noise to accumulate errors.** SDE solvers must take small steps to keep the injected noise from compounding into large errors. ODE trajectories are smooth and predictable, so higher-order solvers (Heun, RK45, DPM-Solver) can take much larger steps while maintaining accuracy.
+
+5. **DDIM is an Euler solver for the Probability Flow ODE.** When the stochasticity parameter $\eta = 0$, the DDIM update rule is mathematically equivalent to taking a single Euler discretization step along the PF-ODE trajectory. This connection was made explicit by Song et al. (2021) in the Score SDE paper.
+
+6. **Heun's method (a 2nd-order solver).** It performs a predict step and then a correction step, giving better accuracy per step than the simple Euler method.
+
+7. **NFE = Number of Function Evaluations** — the number of times the neural network (denoiser / score model) is called during sampling. It matters because each function evaluation is the dominant computational cost of generation. Lower NFE means faster generation; Heun's method uses 2 NFEs per step, so $N$ Heun steps = $2N$ NFEs.
+
 ---
 *Previous: [18-stochastic-differential-equation.md](18-stochastic-differential-equation.md) · Next: [20-denoising.md](20-denoising.md)*

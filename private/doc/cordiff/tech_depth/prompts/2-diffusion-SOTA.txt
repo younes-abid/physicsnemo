@@ -73,3 +73,10 @@ Start for now by creating this
 
 once you finish we will move to next task
 we will build them slowly slowly 
+
+----
+ok now all the documents under /home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/0-beginner
+are generated
+I want now to generate the files under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/1-intermediate
+using same .md structure. this files under intermediate will build intermediate knowledge blocks and reference the files from 0-beginner if needed 

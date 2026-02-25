@@ -97,5 +97,17 @@ where $d$ is the number of dimensions (e.g., pixels). Lower BPD = better model.
 4. What is the ELBO, and how does it relate to log-likelihood?
 5. What does "bits per dimension" measure?
 
+### Answers
+
+1. **For numerical stability and mathematical convenience.** The likelihood of $N$ data points is a product of $N$ small numbers, which quickly underflows to zero on a computer. Taking the log converts the product into a sum: $\log \prod_i p_\theta(\mathbf{x}_i) = \sum_i \log p_\theta(\mathbf{x}_i)$. Sums are numerically stable, easier to differentiate, and since $\log$ is monotonically increasing, the maximizer of $\log \mathcal{L}$ is the same as the maximizer of $\mathcal{L}$. Additionally, Gaussians involve $\exp(\cdot)$, and $\log(\exp(\cdot))$ simplifies beautifully.
+
+2. **They are equivalent.** Minimizing $D_{\text{KL}}(p_{\text{data}} \| p_\theta)$ over $\theta$ is the same as maximizing $\mathbb{E}_{\mathbf{x} \sim p_{\text{data}}}[\log p_\theta(\mathbf{x})]$. This is because $D_{\text{KL}}(p_{\text{data}} \| p_\theta) = \mathbb{E}_{p_{\text{data}}}[\log p_{\text{data}}(\mathbf{x})] - \mathbb{E}_{p_{\text{data}}}[\log p_\theta(\mathbf{x})]$, and the first term (entropy of the data) doesn't depend on $\theta$, so minimizing KL = maximizing expected log-likelihood. This is why these two appear interchangeably in papers.
+
+3. **Because it requires integrating over all possible noise trajectories.** To compute $p_\theta(\mathbf{x}_0)$, you'd need to evaluate $\int p_\theta(\mathbf{x}_{0:T})\,d\mathbf{x}_{1:T}$ — an integral over all possible intermediate noisy images $\mathbf{x}_1, \mathbf{x}_2, \ldots, \mathbf{x}_T$. Each $\mathbf{x}_t$ is a full-dimensional image (e.g., thousands of pixels), so this is an integral over a space with millions of dimensions. No numerical method can handle this.
+
+4. **The ELBO (Evidence Lower Bound) is a computable lower bound on $\log p_\theta(\mathbf{x})$.** Since the true log-likelihood is intractable, we instead maximize the ELBO: $\log p_\theta(\mathbf{x}) \geq \text{ELBO}(\theta)$. By pushing the ELBO up, we indirectly push the log-likelihood up. In DDPM, the ELBO decomposes into a sum of KL divergence terms (one per timestep), each of which compares the learned reverse step to the true reverse posterior — and these further simplify to the familiar MSE noise-prediction loss.
+
+5. **Bits per dimension (BPD) is a normalized measure of how well a generative model explains data.** It equals $\frac{-\log_2 p_\theta(\mathbf{x})}{d}$, where $d$ is the number of dimensions (e.g., total pixels). It measures the average number of bits needed per dimension to encode the data under the model. Lower BPD means the model assigns higher probability to real data — i.e., it's a better model. BPD allows fair comparison between models trained on data of different dimensionalities.
+
 ---
 *Previous: [7-kl-divergence.md](7-kl-divergence.md) · Next: [9-neural-network-as-function-approximator.md](9-neural-network-as-function-approximator.md)*

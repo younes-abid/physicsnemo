@@ -104,5 +104,24 @@ Three reasons:
 5. Why is the Gaussian distribution chosen for noise in diffusion models (give at least 2 reasons)?
 6. What does the Central Limit Theorem tell us in the context of diffusion?
 
+### Answers
+
+1. **Mean $\mu$ and variance $\sigma^2$.** The mean determines the center of the bell curve, and the variance determines how wide/spread out it is. That's it — no other parameters are needed.
+
+2. $$x \sim \mathcal{N}(3, 4)$$
+   Note: the second parameter is the **variance** (4), not the standard deviation (2). Some programming libraries use $\sigma$ instead of $\sigma^2$, so always check the convention.
+
+3. **$5 + 2\epsilon \sim \mathcal{N}(5, 4)$.** Using Property 3 (linear transform): $x = \mu + \sigma \cdot \epsilon$ with $\mu = 5$ and $\sigma = 2$, so $x \sim \mathcal{N}(5, 2^2) = \mathcal{N}(5, 4)$. Equivalently, by Property 1, $2\epsilon \sim \mathcal{N}(0, 4)$, then shifting by 5 gives mean 5.
+
+4. **"Isotropic Gaussian" means the covariance matrix is $\sigma^2 \mathbf{I}$** — all dimensions have the **same variance** and are **independent** of each other (zero correlation). For images, this means every pixel gets noise drawn independently with the same strength. This is important because: (a) it treats all pixels equally — no spatial bias, (b) it makes the math simple — no cross-terms between dimensions, and (c) it's trivially parallelizable to sample.
+
+5. **Reasons the Gaussian is chosen:**
+   - **Mathematical convenience / closure properties**: Gaussians remain Gaussian under addition, scaling, and conditioning. This keeps every step of the forward and reverse process analytically tractable.
+   - **Central Limit Theorem**: The sum of many small independent perturbations converges to a Gaussian regardless of the original distribution, so the forward process naturally ends at a Gaussian.
+   - **Easy to sample**: Efficient algorithms exist for generating Gaussian random numbers on CPUs and GPUs.
+   - **Tractable KL divergence**: The KL divergence between two Gaussians has a closed-form solution, which is needed for the ELBO training objective.
+
+6. **The CLT tells us that after adding many small independent noise perturbations, the result is approximately Gaussian — no matter what the original data distribution looked like.** This is exactly what the forward process does: it applies $T$ small noise steps. By the end ($t = T$), the data distribution has been pushed to something very close to $\mathcal{N}(\mathbf{0}, \mathbf{I})$, regardless of whether the data was images, audio, weather fields, etc. This guarantees a known, simple starting point for the reverse (generative) process.
+
 ---
 *Previous: [0-probability-distribution.md](0-probability-distribution.md) · Next: [2-sampling.md](2-sampling.md)*

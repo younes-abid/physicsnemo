@@ -92,5 +92,22 @@ Understanding how mean and variance behave under scaling and addition is essenti
 4. In the diffusion forward process formula $\mathbf{x}_t = \sqrt{\alpha_t}\mathbf{x}_0 + \sqrt{1-\alpha_t}\boldsymbol{\epsilon}$, why does the noise variance contribution equal $1 - \alpha_t$?
 5. What is the 68-95-99.7 rule for Gaussians?
 
+### Answers
+
+1. **Mean = 3, Variance = 9, Standard deviation = 3.** In the notation $\mathcal{N}(\mu, \sigma^2)$, the first parameter is the mean and the second is the variance. So $\mu = 3$, $\sigma^2 = 9$, and $\sigma = \sqrt{9} = 3$.
+
+2. **Variance of $3X$ = 36.** By the scaling rule $\text{Var}(aX) = a^2 \text{Var}(X)$, so $\text{Var}(3X) = 3^2 \times 4 = 9 \times 4 = 36$. Remember: variance scales by the *square* of the constant, not the constant itself.
+
+3. **Variance of $X + Y$ = 7.** For independent random variables, variances add: $\text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y) = 2 + 5 = 7$. (This only works when $X$ and $Y$ are independent — if they're correlated, there's an extra covariance term.)
+
+4. **Because $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ has variance 1, and multiplying by $\sqrt{1 - \alpha_t}$ squares to give variance $1 - \alpha_t$.** Applying the scaling rule: $\text{Var}(\sqrt{1-\alpha_t}\,\boldsymbol{\epsilon}) = (\sqrt{1-\alpha_t})^2 \times \text{Var}(\boldsymbol{\epsilon}) = (1 - \alpha_t) \times 1 = 1 - \alpha_t$. Similarly, the signal term $\sqrt{\alpha_t}\,\mathbf{x}_0$ contributes variance $\alpha_t \,\text{Var}(\mathbf{x}_0)$. If the data has unit variance, the total variance is $\alpha_t + (1 - \alpha_t) = 1$ — this is why it's called "variance preserving."
+
+5. **The 68-95-99.7 rule** (also called the "empirical rule") states that for a Gaussian distribution:
+   - **~68%** of values fall within **1 standard deviation** of the mean: $[\mu - \sigma,\; \mu + \sigma]$
+   - **~95%** of values fall within **2 standard deviations**: $[\mu - 2\sigma,\; \mu + 2\sigma]$
+   - **~99.7%** of values fall within **3 standard deviations**: $[\mu - 3\sigma,\; \mu + 3\sigma]$
+   
+   This tells you that Gaussian samples very rarely stray far from the mean — values beyond $3\sigma$ are extremely unlikely (<0.3%).
+
 ---
 *Previous: [2-sampling.md](2-sampling.md) · Next: [4-random-variable.md](4-random-variable.md)*

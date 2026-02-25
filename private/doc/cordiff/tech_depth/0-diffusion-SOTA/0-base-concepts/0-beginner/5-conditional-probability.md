@@ -97,5 +97,20 @@ This is the chain rule applied to the sequence of noisy images $\mathbf{x}_1, \m
 4. What does the chain rule of probability allow us to do with a joint distribution?
 5. In conditional weather generation, what role does $\mathbf{c}$ play in $p_\theta(\mathbf{x} \mid \mathbf{c})$?
 
+### Answers
+
+1. **"The probability density of $x$ given that $y$ is known (or has already been observed)."** It tells you how the distribution of $x$ changes once you have information about $y$. For example, $p(\text{temperature} \mid \text{month=January})$ gives the distribution of temperature when you already know it's January — which is very different from the unconditional distribution $p(\text{temperature})$ over the whole year.
+
+2. $$p(x, y) = p(x \mid y) \cdot p(y) = p(y \mid x) \cdot p(x)$$
+   And the marginal is obtained by integrating out the other variable:
+   $$p(x) = \int p(x, y)\,dy = \int p(x \mid y)\,p(y)\,dy$$
+   These three relationships — joint, marginal, conditional — are the backbone of probabilistic reasoning and appear in nearly every derivation in diffusion model papers.
+
+3. **It describes the distribution of the noisy data at step $t$, given that the data at step $t-1$ is known.** Specifically, it's a Gaussian that says: "take $\mathbf{x}_{t-1}$, slightly shrink it (multiply by $\sqrt{1-\beta_t}$), and add a small amount of Gaussian noise (with variance $\beta_t$)." It defines one step of the noise-adding process.
+
+4. **The chain rule lets us decompose any joint distribution over many variables into a product of conditional distributions.** For example: $p(x_1, x_2, x_3) = p(x_1) \cdot p(x_2 \mid x_1) \cdot p(x_3 \mid x_1, x_2)$. In diffusion, this is used to write the entire forward process as $q(\mathbf{x}_{1:T} \mid \mathbf{x}_0) = \prod_{t=1}^T q(\mathbf{x}_t \mid \mathbf{x}_{t-1})$ — a product of simple one-step transitions. This is what makes the forward process tractable: instead of modeling a massive joint distribution over $T$ noisy images, we decompose it into $T$ simple Gaussian steps.
+
+5. **$\mathbf{c}$ is the conditioning input — the information that guides generation.** In weather downscaling, $\mathbf{c}$ is typically the low-resolution weather field (e.g., from a coarse global model like ERA5). The conditional distribution $p_\theta(\mathbf{x} \mid \mathbf{c})$ says: "generate a plausible high-resolution weather field $\mathbf{x}$ that is consistent with the given low-resolution input $\mathbf{c}$." Without the conditioning, the model would generate random weather; with conditioning, it generates weather that matches the large-scale patterns in $\mathbf{c}$.
+
 ---
 *Previous: [4-random-variable.md](4-random-variable.md) · Next: [6-bayes-theorem.md](6-bayes-theorem.md)*

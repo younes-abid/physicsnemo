@@ -86,5 +86,25 @@ Different papers parameterize the same concept differently:
 5. How does the EDM framework use SNR to unify different diffusion formulations?
 6. In the formula $\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\mathbf{x}_0 + \sqrt{1-\bar{\alpha}_t}\boldsymbol{\epsilon}$, identify the signal and noise components.
 
+### Answers
+
+1. **SNR measures how much useful information (signal) remains relative to the amount of random corruption (noise).** A high SNR means the data is mostly intact with little noise; a low SNR means noise dominates and the original data is hard to discern. It's a single number summarizing "how clean vs. how corrupted" the data is at a given point in the diffusion process.
+
+2. **Mostly clean.** $\text{SNR} = 100$ means there is 100× more signal power than noise power. The original image is almost perfectly preserved with only a tiny amount of noise — you'd barely see any corruption. This corresponds to very early timesteps in the forward process.
+
+3. - **At $t = 0$**: $\bar{\alpha}_0 \approx 1$, so $\text{SNR}(0) = \frac{\bar{\alpha}_0}{1 - \bar{\alpha}_0} \approx \frac{1}{0} \to +\infty$. The data is clean — essentially infinite signal relative to noise.
+   - **At $t = T$**: $\bar{\alpha}_T \approx 0$, so $\text{SNR}(T) = \frac{\bar{\alpha}_T}{1 - \bar{\alpha}_T} \approx \frac{0}{1} = 0$. The data is pure noise — no signal remains.
+   
+   The entire forward process is a monotonic journey from $\text{SNR} = \infty$ to $\text{SNR} = 0$.
+
+4. **Because log-SNR provides a more balanced and symmetric scale.** Raw SNR ranges from $+\infty$ to $0$, which is lopsided — high-signal regimes get huge values while high-noise regimes are compressed near zero. Log-SNR ranges from $+\infty$ to $-\infty$, with $\log \text{SNR} = 0$ marking the exact midpoint where signal and noise are equal. This makes it easier to visualize noise schedules, compare them across papers, and design loss weightings that treat all noise levels fairly.
+
+5. **EDM shows that DDPM, SMLD/Score SDE, and other formulations are all instances of the same generative process — they just use different SNR schedules.** By reparameterizing everything in terms of the noise level $\sigma(t)$ (with $\text{SNR} = 1/\sigma^2$ in EDM's convention), Karras et al. demonstrate that the choice of noise schedule, loss weighting, and network preconditioning can be decoupled and studied independently. SNR becomes the common language: instead of comparing formulations through their different $\alpha_t$, $\beta_t$, or $\sigma_t$ parameterizations, you just compare their SNR curves over time.
+
+6. - **Signal component**: $\sqrt{\bar{\alpha}_t} \, \mathbf{x}_0$ — this is the original clean data, scaled down by $\sqrt{\bar{\alpha}_t}$. Its power (variance) is $\bar{\alpha}_t \cdot \text{Var}(\mathbf{x}_0)$.
+   - **Noise component**: $\sqrt{1 - \bar{\alpha}_t} \, \boldsymbol{\epsilon}$ — this is standard Gaussian noise, scaled by $\sqrt{1 - \bar{\alpha}_t}$. Its power (variance) is $1 - \bar{\alpha}_t$.
+   
+   As $t$ increases, $\bar{\alpha}_t$ shrinks toward 0: the signal coefficient decreases (signal fades) while the noise coefficient increases (noise grows). The SNR is the ratio of their variances: $\text{SNR}(t) = \bar{\alpha}_t / (1 - \bar{\alpha}_t)$.
+
 ---
 *Previous: [10-noise.md](10-noise.md) · Next: [12-markov-chain.md](12-markov-chain.md)*

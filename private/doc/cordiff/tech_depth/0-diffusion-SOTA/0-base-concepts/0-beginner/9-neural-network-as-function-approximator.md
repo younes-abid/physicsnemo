@@ -79,5 +79,22 @@ The neural network is the **only learned component** in a diffusion model. Every
 4. Name three different things a diffusion network can be trained to predict.
 5. In a diffusion model, what is learned and what is fixed by design?
 
+### Answers
+
+1. **The subscript $\theta$ indicates that this is a learned (parametric) function, not a fixed formula.** $\theta$ represents all the trainable weights and biases of the neural network. Writing $\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)$ means: "a function that takes noisy data $\mathbf{x}_t$ and timestep $t$ as input, and outputs a noise prediction, where the function's behavior is determined by learned parameters $\theta$." Different values of $\theta$ give different functions — training finds the $\theta$ that makes the best predictions.
+
+2. **Because the mapping from noisy images to noise (or clean images) is incredibly complex and data-dependent.** There's no closed-form formula that says "given these specific noisy pixel values at this noise level, the original image was X." The relationship depends on the entire structure of natural images (or weather fields) — edges, textures, spatial correlations, physical constraints — which can only be captured by learning from thousands of examples. A neural network learns these patterns from data.
+
+3. **The Universal Approximation Theorem states that a neural network with sufficient capacity (enough neurons) can approximate any continuous function to arbitrary accuracy.** This is relevant because it gives us confidence that whatever the true denoising function looks like — no matter how complex — a sufficiently large neural network *can* in principle learn it. It's the theoretical justification for using neural networks as general-purpose function approximators in diffusion models (and ML broadly).
+
+4. Three different prediction targets:
+   - **Noise prediction** ($\boldsymbol{\epsilon}$-prediction): predict the Gaussian noise $\boldsymbol{\epsilon}$ that was added to the clean data (used in DDPM).
+   - **Score prediction** ($\mathbf{s}$-prediction): predict the score function $\nabla_{\mathbf{x}} \log p(\mathbf{x})$, which points toward higher-density regions (used in score-based/SMLD models).
+   - **Data prediction** ($\mathbf{x}_0$-prediction): directly predict the clean data $\mathbf{x}_0$ from the noisy input.
+   
+   (Others include velocity prediction and direct denoiser output in EDM.) All these parameterizations are mathematically equivalent — you can convert between them — but they differ in training stability and practical performance.
+
+5. **Learned: the neural network** $f_\theta$ (the denoiser/noise predictor) — this is the *only* component that is trained from data. **Fixed by design: everything else** — the forward noising process $q(\mathbf{x}_t \mid \mathbf{x}_{t-1})$, the noise schedule ($\beta_t$ or $\sigma_t$), and the sampling/generation algorithm (e.g., DDPM ancestral sampling, DDIM, or ODE solvers). The entire framework is carefully designed so that the network only needs to learn one thing: how to reverse the noise corruption at each step.
+
 ---
 *Previous: [8-log-likelihood.md](8-log-likelihood.md) · Next: [10-noise.md](10-noise.md)*

@@ -82,5 +82,21 @@ If the noise schedule is designed well, this is nearly zero.
 4. In the ELBO decomposition, what are we comparing with each KL term?
 5. What should $D_{\text{KL}}(q(\mathbf{x}_T \mid \mathbf{x}_0) \,\|\, \mathcal{N}(\mathbf{0}, \mathbf{I}))$ be, and why?
 
+### Answers
+
+1. **It means $p$ and $q$ are the exact same distribution.** There is zero information loss when using $q$ to approximate $p$. Since KL divergence is always $\geq 0$, a value of 0 is the best possible — it means the two distributions assign identical probabilities to every possible outcome.
+
+2. **No, KL divergence is NOT symmetric:** $D_{\text{KL}}(p \,\|\, q) \neq D_{\text{KL}}(q \,\|\, p)$ in general. This matters because the two directions have different behaviors:
+   - **Forward KL** $D_{\text{KL}}(p \,\|\, q)$: penalizes $q$ heavily wherever $p$ has mass but $q$ doesn't → encourages $q$ to be **mode-covering** (spread out to cover all of $p$).
+   - **Reverse KL** $D_{\text{KL}}(q \,\|\, p)$: penalizes $q$ heavily wherever $q$ has mass but $p$ doesn't → encourages $q$ to be **mode-seeking** (concentrate on the highest-density regions of $p$).
+   
+   In diffusion models, the ELBO uses a specific direction at each step, and which direction matters for the behavior of the trained model.
+
+3. **Because both the true reverse posterior $q(\mathbf{x}_{t-1} \mid \mathbf{x}_t, \mathbf{x}_0)$ and the learned reverse $p_\theta(\mathbf{x}_{t-1} \mid \mathbf{x}_t)$ are Gaussians.** The KL divergence between two Gaussians has a closed-form formula — no sampling or numerical integration needed. This makes each term in the ELBO loss exactly computable. It further simplifies to an MSE between the predicted and true means (since the variances are often fixed), which is why the final training loss is just $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2$.
+
+4. **Each KL term compares the true (tractable) reverse step $q(\mathbf{x}_{t-1} \mid \mathbf{x}_t, \mathbf{x}_0)$ against the learned reverse step $p_\theta(\mathbf{x}_{t-1} \mid \mathbf{x}_t)$.** In other words: "At timestep $t$, how close is the network's predicted denoising distribution to the actual optimal denoising distribution?" Minimizing these KL terms trains the network to denoise correctly at every noise level.
+
+5. **It should be approximately zero.** This term measures how close the fully noised data $q(\mathbf{x}_T \mid \mathbf{x}_0)$ is to pure Gaussian noise $\mathcal{N}(\mathbf{0}, \mathbf{I})$. If the noise schedule is designed properly (enough steps, large enough total noise), the forward process completely destroys the signal by step $T$, so $q(\mathbf{x}_T \mid \mathbf{x}_0) \approx \mathcal{N}(\mathbf{0}, \mathbf{I})$ and the KL is nearly zero. This is important because the reverse process *starts* from $\mathcal{N}(\mathbf{0}, \mathbf{I})$ — if the forward process doesn't actually reach pure noise, there's a mismatch at the starting point of generation.
+
 ---
 *Previous: [6-bayes-theorem.md](6-bayes-theorem.md) · Next: [8-log-likelihood.md](8-log-likelihood.md)*

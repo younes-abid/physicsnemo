@@ -62,5 +62,21 @@ For images: imagine an impossibly large jar containing every possible image. Nat
 4. In diffusion models, what are the two main distributions we care about?
 5. Why can't we just write down the formula for $p_{\text{data}}(\mathbf{x})$ for natural images?
 
+### Answers
+
+1. **PMF vs PDF.** A **PMF** (Probability Mass Function) applies to **discrete** distributions — it gives the exact probability of each countable outcome, e.g. $P(X = 3) = 1/6$. A **PDF** (Probability Density Function) applies to **continuous** distributions — it gives a *density*, not a probability. You must integrate the PDF over a range to get a probability: $P(a \le X \le b) = \int_a^b p(x)\,dx$.
+
+2. **No, $p(x) = 0.3$ is not a probability.** For a continuous distribution, $p(x)$ is a *density*. The probability of any single exact point is zero ($P(X = x) = 0$). The value 0.3 tells you how "concentrated" the distribution is around that point. In fact, $p(x)$ can even exceed 1 (e.g., a Uniform(0, 0.5) distribution has $p(x) = 2$ for $x \in [0, 0.5]$). Only the integral over a range gives an actual probability.
+
+3. **"$x$ is sampled from the distribution $p$."** It means we draw a random value $x$ according to the rules defined by $p(x)$ — values where $p(x)$ is high are more likely to be drawn, and values where $p(x)$ is low are less likely.
+
+4. **The two main distributions are:**
+   - $p_{\text{data}}(\mathbf{x})$ — the **true data distribution** (unknown). This is what real images/data follow.
+   - $p_\theta(\mathbf{x})$ — the **model's learned distribution** (parameterized by neural network weights $\theta$). The goal of training is to make $p_\theta$ as close as possible to $p_{\text{data}}$.
+   
+   (A third important one is the noise distribution $\mathcal{N}(\mathbf{0}, \mathbf{I})$, which is known and fixed.)
+
+5. **Because natural images live in an astronomically high-dimensional space with incredibly complex structure.** A 256×256 RGB image has ~196,000 dimensions. The set of "realistic-looking" images is a tiny, complicated manifold within this space. There is no closed-form mathematical formula that describes which pixel combinations look like real photographs vs. random noise. We only have *samples* from this distribution (our dataset of images), not the formula itself.
+
 ---
 *Next: [1-gaussian-distribution.md](1-gaussian-distribution.md) — The specific distribution that makes diffusion models work.*

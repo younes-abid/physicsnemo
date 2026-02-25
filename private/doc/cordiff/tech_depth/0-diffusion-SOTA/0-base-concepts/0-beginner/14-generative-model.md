@@ -104,5 +104,26 @@ For diffusion models specifically:
 5. What are the two phases of using a generative model?
 6. In weather applications like CorrDiff, what is the conditioning input $\mathbf{c}$?
 
+### Answers
+
+1. **Learn the data distribution $p_{\text{data}}(\mathbf{x})$ well enough to generate new, realistic samples that could plausibly have come from the same distribution.** The model approximates $p_{\text{data}}$ with $p_\theta$, and once trained, we can draw $\mathbf{x}_{\text{new}} \sim p_\theta$ to create data that never existed before but shares the same statistical properties as the training data.
+
+2. Three families:
+   - **GANs (Generative Adversarial Networks)**: use a minimax game between a generator and discriminator — the generator tries to fool the discriminator, which tries to distinguish real from fake. Key property: **very fast single-pass generation** but notoriously unstable training.
+   - **VAEs (Variational Autoencoders)**: encode data into a compressed latent space and decode back, trained using the ELBO. Key property: **principled probabilistic framework** with a tractable lower bound on the likelihood.
+   - **Diffusion Models**: iteratively denoise pure noise into data over many steps. Key property: **excellent sample quality and diversity** with stable training, at the cost of slow generation (many sequential steps).
+   
+   (Other valid answers: Normalizing Flows — exact likelihood via invertible transformations; Autoregressive Models — generate data one element at a time, each conditioned on all previous elements.)
+
+3. **Advantage over GANs**: Diffusion models have **much more stable training** (no adversarial minimax game, just MSE regression), **better mode coverage** (they don't suffer from mode collapse — they capture the full diversity of the data distribution), and currently achieve **higher sample quality** on benchmarks like ImageNet. **Disadvantage**: Diffusion models are **much slower at generation** — they require many sequential denoising steps (typically 20–1000 forward passes through the network), whereas GANs generate a sample in a single forward pass. This makes diffusion models orders of magnitude slower at inference time.
+
+4. **Unconditional generation** samples from $p_\theta(\mathbf{x})$ with no additional input — the model freely generates whatever it wants (e.g., "generate a random face"). **Conditional generation** samples from $p_\theta(\mathbf{x} \mid \mathbf{c})$ where $\mathbf{c}$ is some conditioning information that steers the output — the model generates data consistent with the condition (e.g., "generate a face matching this text description" or "generate a high-resolution weather field given this coarse input"). The conditioning can be text, a low-resolution image, a class label, a physical constraint, or any other side information.
+
+5. The two phases:
+   - **Training phase**: The model sees many real data samples and optimizes its parameters $\theta$ to learn $p_\theta \approx p_{\text{data}}$. For diffusion models, this means learning to predict noise at various noise levels — the training loss is typically $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2$. This phase is computationally expensive but only done once.
+   - **Generation phase (inference/sampling)**: The trained model is used to create new samples. For diffusion models, this means starting from pure noise $\mathbf{x}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ and iteratively denoising through $T$ steps to produce $\mathbf{x}_0$. This phase is done every time you want a new sample.
+
+6. **The conditioning input $\mathbf{c}$ is a coarse-resolution weather field** (e.g., from a global forecast model or reanalysis like ERA5). CorrDiff performs conditional generation: given a low-resolution weather state, it generates a plausible high-resolution (fine-grained) version. This is essentially **stochastic weather downscaling** — the diffusion model learns the conditional distribution $p_\theta(\mathbf{x}_{\text{high-res}} \mid \mathbf{x}_{\text{low-res}})$, producing multiple possible high-resolution realizations that are all physically consistent with the coarse input but differ in their fine-scale details.
+
 ---
 *Previous: [13-latent-variable.md](13-latent-variable.md) · Next: [15-loss-function.md](15-loss-function.md)*

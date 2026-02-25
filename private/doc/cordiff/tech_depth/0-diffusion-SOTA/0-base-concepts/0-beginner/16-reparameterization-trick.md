@@ -110,5 +110,24 @@ This works for:
 4. In the diffusion forward process $\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\mathbf{x}_0 + \sqrt{1-\bar{\alpha}_t}\boldsymbol{\epsilon}$, identify the mean, the standard deviation, and the external noise.
 5. Which landmark paper popularized the reparameterization trick?
 
+### Answers
+
+1. **Because sampling is a stochastic, non-differentiable operation — there is no deterministic formula connecting the distribution's parameters to the specific value drawn.** Backpropagation requires computing $\frac{\partial L}{\partial \theta}$ by applying the chain rule through every operation from the loss back to the parameters. When we write $\mathbf{x} \sim \mathcal{N}(\mu_\theta, \sigma_\theta^2)$, the "sample" operation is a black box: it takes $\mu_\theta$ and $\sigma_\theta$ as input and produces a random output with no differentiable relationship. The chain rule breaks at this point because $\frac{\partial \mathbf{x}}{\partial \mu_\theta}$ is undefined for a random draw.
+
+2. **It separates the randomness from the parameters by rewriting the sample as a deterministic, differentiable function of the parameters plus fixed external noise.** Instead of $\mathbf{x} \sim \mathcal{N}(\mu_\theta, \sigma_\theta^2)$, we write $\mathbf{x} = \mu_\theta + \sigma_\theta \cdot \boldsymbol{\epsilon}$ where $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$. Now $\boldsymbol{\epsilon}$ is sampled from a fixed distribution with no learnable parameters, and $\mathbf{x}$ is a simple algebraic function of $\mu_\theta$ and $\sigma_\theta$. Gradients flow cleanly: $\frac{\partial \mathbf{x}}{\partial \mu_\theta} = 1$ and $\frac{\partial \mathbf{x}}{\partial \sigma_\theta} = \boldsymbol{\epsilon}$. The randomness is "externalized" — it still produces stochastic samples, but the computation graph is differentiable.
+
+3. $\mathcal{N}(3, 4)$ has mean $\mu = 3$ and variance $\sigma^2 = 4$, so $\sigma = 2$. The reparameterization is:
+   $$x = 3 + 2\epsilon, \quad \epsilon \sim \mathcal{N}(0, 1)$$
+   We can verify: $\mathbb{E}[x] = 3 + 2 \cdot 0 = 3$ and $\text{Var}(x) = 2^2 \cdot 1 = 4$. ✓
+
+4. In $\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0 + \sqrt{1-\bar{\alpha}_t}\,\boldsymbol{\epsilon}$:
+   - **Mean**: $\sqrt{\bar{\alpha}_t}\,\mathbf{x}_0$ — this is the scaled original image, which serves as the center of the Gaussian $q(\mathbf{x}_t \mid \mathbf{x}_0)$
+   - **Standard deviation**: $\sqrt{1-\bar{\alpha}_t}$ — this scales the noise and determines how much randomness is added (it's the square root of the variance $(1-\bar{\alpha}_t)\mathbf{I}$)
+   - **External noise**: $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ — standard Gaussian noise with no learnable parameters
+   
+   This is exactly the reparameterization of $\mathbf{x}_t \sim \mathcal{N}(\sqrt{\bar{\alpha}_t}\,\mathbf{x}_0,\;(1-\bar{\alpha}_t)\mathbf{I})$.
+
+5. **The VAE paper by Kingma & Welling (2013): "Auto-Encoding Variational Bayes."** The reparameterization trick was the key technical innovation that made VAEs trainable. VAEs need to backpropagate through sampling from the approximate posterior $q_\phi(\mathbf{z} \mid \mathbf{x}) = \mathcal{N}(\mu_\phi(\mathbf{x}), \sigma_\phi^2(\mathbf{x}))$. Without the trick, gradients w.r.t. the encoder parameters $\phi$ cannot flow through the latent sample $\mathbf{z}$. By writing $\mathbf{z} = \mu_\phi + \sigma_\phi \cdot \boldsymbol{\epsilon}$, the entire VAE becomes end-to-end differentiable. The same trick is now fundamental to diffusion models.
+
 ---
 *Previous: [15-loss-function.md](15-loss-function.md) · Next: [17-score-function.md](17-score-function.md)*

@@ -114,5 +114,23 @@ This formulation cleanly separates the network architecture from the noise level
 5. What different "skills" does the denoiser need at high vs. low noise levels?
 6. How does the EDM framework treat the denoiser differently from DDPM?
 
+### Answers
+
+1. **Recovering a clean signal from a noisy observation.** Given $\mathbf{y} = \mathbf{x} + \sigma\boldsymbol{\epsilon}$, the goal is to estimate the original clean data $\mathbf{x}$ as accurately as possible.
+
+2. **The posterior mean** (a.k.a. the **minimum mean squared error / MMSE estimator**):
+$$D^*(\mathbf{y}, \sigma) = \mathbb{E}[\mathbf{x} \mid \mathbf{y}] = \int \mathbf{x}\, p(\mathbf{x}\mid\mathbf{y})\, d\mathbf{x}$$
+It computes the **expected value of the clean data conditioned on the noisy observation**. This requires (implicitly) knowing the data distribution $p(\mathbf{x})$.
+
+3. **Tweedie's formula:**
+$$\mathbb{E}[\mathbf{x} \mid \mathbf{y}] = \mathbf{y} + \sigma^2 \nabla_{\mathbf{y}} \log p(\mathbf{y})$$
+It says the optimal denoised estimate equals the noisy input plus a correction proportional to the **score** of the noisy distribution. This means **denoising and score estimation are equivalent**: knowing one immediately gives you the other. Training a network to denoise therefore also trains it to estimate the score, which is exactly what is needed to run the reverse diffusion process.
+
+4. **A single big step from pure noise would fail** because the network cannot reconstruct all global structure and fine details at once from nearly random input. Many small steps work because each step only needs to make a **small, manageable correction** at the current noise level. The iterative refinement lets the model first establish coarse structure (at high noise) and progressively sharpen details (at low noise).
+
+5. At **high noise levels**, the denoiser must understand **global statistics** — what the overall layout, shape, and large-scale structure of the data look like (e.g., the general arrangement of a face, or large-scale weather patterns). At **low noise levels**, the denoiser must understand **fine-grained details** — exact textures, sharp edges, and subtle local features.
+
+6. **EDM makes the denoiser $D_\theta$ the primary / central object**, with explicit preconditioning functions ($c_{\text{skip}}, c_{\text{out}}, c_{\text{in}}, c_{\text{noise}}$) that cleanly separate noise-level handling from the raw network $F_\theta$. DDPM instead frames everything around a **noise predictor** $\boldsymbol{\epsilon}_\theta$. The EDM formulation includes a **skip connection** ($c_{\text{skip}}(\sigma)\,\mathbf{x}$) so that at low noise levels the denoiser approximately passes the input through unchanged, making training more stable. Both are mathematically equivalent but EDM's parameterization is more principled and easier to analyze.
+
 ---
 *Previous: [19-ordinary-differential-equation.md](19-ordinary-differential-equation.md) · Next: [21-timestep-and-noise-schedule.md](21-timestep-and-noise-schedule.md)*

@@ -111,5 +111,20 @@ This is an important innovation we'll cover later in the paper-specific files.
 4. Write the factored form of the joint forward distribution $q(\mathbf{x}_{1:T} \mid \mathbf{x}_0)$.
 5. Which paper introduces a non-Markovian reverse process, and why?
 
+### Answers
+
+1. **The future state depends only on the present state, not on any past history:** $P(X_{t+1} \mid X_t, X_{t-1}, \ldots, X_0) = P(X_{t+1} \mid X_t)$. In other words, knowing where you are right now tells you everything you need to predict where you'll be next — how you got here is irrelevant.
+
+2. **Both, depending on context.** By *definition*, the forward process is a Markov chain where each step $q(\mathbf{x}_t \mid \mathbf{x}_{t-1})$ depends only on $\mathbf{x}_{t-1}$. However, because the transitions are Gaussian and the Markov chain is linear-Gaussian, we can derive a *closed-form marginal* $q(\mathbf{x}_t \mid \mathbf{x}_0) = \mathcal{N}(\mathbf{x}_t; \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0, (1-\bar{\alpha}_t)\mathbf{I})$ that lets us jump directly from $\mathbf{x}_0$ to any $\mathbf{x}_t$ without computing intermediate steps. The Markov structure is in the *definition*; the direct dependence on $\mathbf{x}_0$ is a *derived shortcut* that's critical for efficient training.
+
+3. **Because it lets us factorize the full joint distribution into a product of simple one-step transitions.** Without the Markov property, $q(\mathbf{x}_{1:T} \mid \mathbf{x}_0)$ would require specifying the full $T$-dimensional joint distribution — intractable for large $T$. With the Markov property, it factors as $\prod_{t=1}^T q(\mathbf{x}_t \mid \mathbf{x}_{t-1})$, where each factor is a simple Gaussian. This also means we only need to define *one* transition rule that's reused at every step, and it enables the closed-form marginal $q(\mathbf{x}_t \mid \mathbf{x}_0)$ via cumulative products of the $\alpha_t$ coefficients.
+
+4. $$q(\mathbf{x}_{1:T} \mid \mathbf{x}_0) = \prod_{t=1}^{T} q(\mathbf{x}_t \mid \mathbf{x}_{t-1})$$
+   where each factor is $q(\mathbf{x}_t \mid \mathbf{x}_{t-1}) = \mathcal{N}(\mathbf{x}_t;\, \sqrt{1-\beta_t}\,\mathbf{x}_{t-1},\, \beta_t \mathbf{I})$. This is the chain rule of probability *simplified* by the Markov property — each term conditions only on the immediately preceding state, not all previous states.
+
+5. **DDIM (Denoising Diffusion Implicit Models, Song et al. 2020)** introduces a non-Markovian reverse process. In DDIM, the reverse step uses both $\mathbf{x}_t$ and a prediction of $\mathbf{x}_0$ (derived from the noise prediction), making each reverse step depend on more than just the current state. The motivation is twofold:
+   - **Fewer sampling steps**: because the process is non-Markovian, you can skip timesteps during generation (e.g., go from step 1000 → 900 → 800 instead of every single step), dramatically reducing inference cost.
+   - **Deterministic sampling**: DDIM can set the stochasticity to zero, making generation fully deterministic — the same initial noise always produces the same output. This enables meaningful interpolation in the latent space and reproducible generation.
+
 ---
 *Previous: [11-signal-to-noise-ratio.md](11-signal-to-noise-ratio.md) · Next: [13-latent-variable.md](13-latent-variable.md)*

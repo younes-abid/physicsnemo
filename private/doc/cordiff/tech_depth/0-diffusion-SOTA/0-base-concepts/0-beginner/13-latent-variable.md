@@ -82,5 +82,17 @@ In standard diffusion (DDPM), the latent variables $\mathbf{x}_1, \ldots, \mathb
 4. What is the difference between latent variables in DDPM vs. Stable Diffusion?
 5. How does the existence of latent variables lead to the need for the ELBO?
 
+### Answers
+
+1. **A variable is "latent" if it is never directly observed in the data — it's hidden.** It exists only within the model's internal representation and must be inferred. You don't have ground-truth labels or measurements for it. In diffusion models, the intermediate noisy images $\mathbf{x}_1, \ldots, \mathbf{x}_T$ are latent because our training data only contains clean images $\mathbf{x}_0$ — the noisy intermediates are introduced by the model's design and never appear in the dataset.
+
+2. **The entire chain of intermediate noisy images** $\mathbf{x}_1, \mathbf{x}_2, \ldots, \mathbf{x}_T$. These are the progressively noisier versions of the clean data $\mathbf{x}_0$. During training, we *construct* them artificially (using the forward process), but they are not part of the observed dataset. The clean data $\mathbf{x}_0$ is the only observed variable; all $T$ intermediate states are latent.
+
+3. **Because the integral is over an astronomically high-dimensional space.** Each $\mathbf{x}_t$ has the same dimensionality as the data (e.g., $d = 64 \times 64 \times 3 = 12{,}288$ for a small image). With $T = 1000$ timesteps, the integral is over $T \times d = 12{,}288{,}000$ dimensions. No numerical integration method can handle this. Even Monte Carlo estimation would require an impossibly large number of samples to get a reasonable estimate in such a high-dimensional space.
+
+4. **In DDPM**, the latent variables $\mathbf{x}_1, \ldots, \mathbf{x}_T$ live in the **same space** as the original data — they are full-resolution images, just progressively noisier. "Latent" here means "hidden/unobserved," not "compressed." **In Stable Diffusion (Latent Diffusion Model)**, the word "latent" is used in a second sense: the diffusion process operates in a **compressed latent space** (e.g., $64 \times 64 \times 4$ instead of $512 \times 512 \times 3$). A pretrained encoder maps images into this lower-dimensional space, diffusion runs there (much cheaper), and a decoder maps back to pixel space. So Stable Diffusion uses "latent" in *both* senses: hidden variables that also live in a compressed representation.
+
+5. **Because the log-likelihood $\log p_\theta(\mathbf{x}_0)$ requires marginalizing over all latent variables, which is intractable.** To evaluate how well the model explains data, we'd need $\log p_\theta(\mathbf{x}_0) = \log \int p_\theta(\mathbf{x}_{0:T})\,d\mathbf{x}_{1:T}$, but this integral is impossible to compute (see answer 3). The ELBO (Evidence Lower Bound) provides a **computable lower bound** on $\log p_\theta(\mathbf{x}_0)$ by introducing an approximate posterior $q(\mathbf{x}_{1:T} \mid \mathbf{x}_0)$ and using Jensen's inequality. Maximizing the ELBO indirectly pushes up the true log-likelihood. In DDPM, the ELBO decomposes beautifully into per-timestep KL divergence terms that reduce to the simple MSE noise-prediction loss.
+
 ---
 *Previous: [12-markov-chain.md](12-markov-chain.md) · Next: [14-generative-model.md](14-generative-model.md)*

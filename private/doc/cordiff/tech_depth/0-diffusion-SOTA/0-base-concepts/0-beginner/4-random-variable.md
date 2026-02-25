@@ -70,5 +70,17 @@ All of the diffusion math describes relationships between these random variables
 4. Is $\boldsymbol{\epsilon}$ in diffusion models a fixed value or a random variable?
 5. If $\mathbf{x}$ is a 64×64 grayscale image, how many dimensions does the random vector have?
 
+### Answers
+
+1. **A random variable $X$ is an abstract object** — it represents "a value that *will be* randomly drawn" but hasn't been drawn yet. It carries all the information about what values are possible and how likely each is. **A realization $x$ is a specific concrete number** that was actually obtained after performing the random draw. For example, $X \sim \mathcal{N}(0,1)$ is the random variable; after sampling, you might get $x = 1.37$, which is the realization. Think of $X$ as the *process* and $x$ as the *outcome*.
+
+2. **Because the data we work with (images, weather fields) is high-dimensional.** A single image is not one number — it's a grid of thousands or millions of pixel values. We need a random vector $\mathbf{x} = (x_1, x_2, \ldots, x_d)$ where each component $x_i$ represents one pixel (or one channel of one pixel). The joint distribution $p(\mathbf{x})$ describes the probability over *entire images*, capturing not just individual pixel statistics but also the correlations between pixels that make images look coherent.
+
+3. **$\mathbf{x}_0$ represents a clean data sample** — an original image (or weather field) from the dataset, with no noise added. **$\mathbf{x}_T$ represents the data after the full forward process** — by that point, so much noise has been added that the original signal is completely destroyed, and $\mathbf{x}_T$ is approximately pure Gaussian noise $\mathcal{N}(\mathbf{0}, \mathbf{I})$.
+
+4. **$\boldsymbol{\epsilon}$ is a random variable.** Each time we run the forward process (during training or generation), we draw a *fresh* sample $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$. It's different every time. The network's job is to predict *which particular* $\boldsymbol{\epsilon}$ was drawn, given the noisy result $\mathbf{x}_t$.
+
+5. **4,096 dimensions.** A 64×64 grayscale image has $64 \times 64 = 4{,}096$ pixels, so the random vector $\mathbf{x} \in \mathbb{R}^{4096}$. For a color (RGB) image of the same size, it would be $64 \times 64 \times 3 = 12{,}288$ dimensions. This illustrates why the distributions in generative modeling are so complex — we're working in extremely high-dimensional spaces.
+
 ---
 *Previous: [3-mean-variance-std.md](3-mean-variance-std.md) · Next: [5-conditional-probability.md](5-conditional-probability.md)*

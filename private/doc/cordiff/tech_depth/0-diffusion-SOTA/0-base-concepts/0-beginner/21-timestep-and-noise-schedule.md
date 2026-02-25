@@ -133,5 +133,31 @@ The schedule determines the distribution of SNR values during training. Some pap
 6. Why should sampling steps be concentrated near low noise levels during generation?
 7. What is the difference between the discrete-time and continuous-time treatment of the schedule?
 
+### Answers
+
+1. The noise schedule defines **how much noise is added at each step** of the forward process, controlling the transition from clean data to pure Gaussian noise. It determines the signal-to-noise ratio at every point in the diffusion process and is a critical design choice that affects sample quality, training stability, and sampling efficiency.
+
+2. - **$\beta_t$**: The noise variance added at a single forward step $t$ (small values, typically $10^{-4}$ to $0.02$).
+   - **$\alpha_t = 1 - \beta_t$**: The fraction of signal retained at step $t$.
+   - **$\bar{\alpha}_t = \prod_{s=1}^{t} \alpha_s$**: The **cumulative signal retention** — the fraction of the original signal that survives after all $t$ steps. It decreases monotonically from $\approx 1$ (at $t=0$) to $\approx 0$ (at $t=T$).
+
+3. $$\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0 + \sqrt{1 - \bar{\alpha}_t}\,\boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
+   Equivalently: $q(\mathbf{x}_t \mid \mathbf{x}_0) = \mathcal{N}(\mathbf{x}_t;\, \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0,\, (1-\bar{\alpha}_t)\mathbf{I})$. This closed-form avoids running $t$ sequential noising steps.
+
+4. The cosine schedule (Nichol & Dhariwal, 2021) was introduced because the **linear schedule destroys the signal too quickly** in the middle of the process. With a linear schedule, $\bar{\alpha}_t$ drops rapidly, meaning the model wastes many timesteps in a regime that is essentially pure noise. The cosine schedule provides a **more gradual, symmetric transition**, ensuring meaningful signal content persists longer and that the model gets useful training signal across a wider range of timesteps.
+
+5. EDM **works directly with the noise standard deviation $\sigma(t)$** rather than defining a sequence of $\beta_t$ values. Instead of specifying how much noise to add at each step, EDM treats $\sigma$ as the fundamental quantity. For sampling, EDM spaces timesteps using $\sigma_i = \left(\sigma_{\max}^{1/\rho} + \frac{i}{N-1}(\sigma_{\min}^{1/\rho} - \sigma_{\max}^{1/\rho})\right)^\rho$ with $\rho=7$, which is explicitly designed to allocate more steps where they matter most. This is cleaner and more flexible than the $\beta_t$-based formulation.
+
+6. **Fine details are generated at low noise levels.** At high noise, only coarse, large-scale structure changes between steps — these transitions are smooth and easy. At low noise, the model must resolve sharp edges, textures, and subtle features, which requires more precise, smaller steps. Concentrating sampling steps near low noise (as EDM does with $\rho=7$) gives the solver more resolution where the denoising trajectory changes most rapidly, improving final sample quality.
+
+7. | Aspect | Discrete (DDPM) | Continuous (Score SDE / EDM) |
+   |--------|----------------|------------------------------|
+   | **Time variable** | $t \in \{0, 1, \ldots, T\}$ (integer index) | $t \in [0, T]$ or $\sigma \in [\sigma_{\min}, \sigma_{\max}]$ (real-valued) |
+   | **Schedule** | A fixed sequence $\beta_1, \ldots, \beta_T$ | A continuous function $\beta(t)$ or $\sigma(t)$ |
+   | **Flexibility** | Tied to a specific $T$ (e.g., 1000) | Can choose any number of sampling steps from the continuous curve |
+   | **Theory** | Markov chain with fixed transitions | Stochastic/ordinary differential equations |
+   
+   The continuous formulation is more general — discrete schedules can be seen as discretizations of a continuous schedule.
+
 ---
 *Previous: [20-denoising.md](20-denoising.md) · Next: [22-forward-process.md](22-forward-process.md)*

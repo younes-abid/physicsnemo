@@ -74,5 +74,17 @@ In diffusion models, we mostly care about **sampling** — generating new data. 
 4. Where does sampling appear during diffusion model **generation/inference**?
 5. What is the difference between evaluating $p(x)$ and sampling from $p(x)$?
 
+### Answers
+
+1. **"Draw a random value $x$ according to the probability distribution $p$."** Values where $p(x)$ is high are more likely to be drawn; values where $p(x)$ is low are less likely. Each time you sample, you may get a different value.
+
+2. **A bell curve (Gaussian shape), centered at 0.** Most values will cluster around 0, with roughly 68% falling between −1 and +1, about 95% between −2 and +2, and very few beyond ±3. The more samples you draw, the smoother and closer to the ideal bell curve the histogram becomes.
+
+3. **During training, we sample random noise $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$.** This noise is added to clean data to create noisy training examples at various noise levels. We also sample a random timestep $t$ for each training example. The network then learns to predict the noise that was added.
+
+4. **During generation, we sample initial pure noise $\mathbf{x}_T \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ and then iteratively denoise it.** In stochastic samplers like DDPM, fresh noise $\mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ is also sampled at each reverse step. The final result $\mathbf{x}_0$ is a new data sample that (ideally) looks like it came from the real data distribution.
+
+5. **Evaluating $p(x)$** means computing a number — the density at a specific point $x$. It answers "how likely is *this particular* value?" **Sampling from $p(x)$** means generating a new random value according to the distribution. It answers "give me a new random value." Evaluating requires a known formula for $p(x)$; sampling can sometimes be done even when we don't have an explicit formula (e.g., via the iterative denoising process in diffusion models).
+
 ---
 *Previous: [1-gaussian-distribution.md](1-gaussian-distribution.md) · Next: [3-mean-variance-std.md](3-mean-variance-std.md)*

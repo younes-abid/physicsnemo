@@ -111,5 +111,38 @@ Different choices of $\lambda(t)$ give different emphasis to different noise lev
 5. What role does the weight $\lambda(t)$ play in the loss, and why do different papers choose it differently?
 6. Name the five steps of computing the DDPM training loss for one sample.
 
+### Answers
+
+1. **A loss function measures how wrong a model's prediction is compared to the true answer.** It assigns a non-negative scalar value where 0 means perfect prediction and larger values mean worse predictions. Training is the process of finding parameters $\theta^* = \arg\min_\theta L(\theta)$ that minimize this measure of error. The loss function defines what "good" means for the model — different losses encode different notions of quality.
+
+2. $$L_{\text{MSE}} = \|\mathbf{y} - \hat{\mathbf{y}}\|^2 = \sum_{j=1}^{d} (y_j - \hat{y}_j)^2$$
+   This sums the squared difference between each corresponding element of the two vectors across all $d$ dimensions. For images, $d$ is the total number of pixel values (height × width × channels). The squaring ensures all errors are positive and penalizes large errors disproportionately more than small ones.
+
+3. **Because MSE is mathematically equivalent to maximum likelihood estimation under Gaussian noise.** Diffusion models add Gaussian noise, so the forward process noise is $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$. If we model the prediction error as Gaussian — $\boldsymbol{\epsilon} = \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t) + \text{error}$, where $\text{error} \sim \mathcal{N}(\mathbf{0}, \sigma^2\mathbf{I})$ — then maximizing the log-likelihood of the true noise given the prediction is equivalent to minimizing $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2$. MSE isn't just a convenient choice — it's the *principled* loss that falls out of the probabilistic derivation.
+
+4. **The true noise $\boldsymbol{\epsilon}$ and the predicted noise $\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)$.** Specifically:
+   - $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ is the actual Gaussian noise that was added to create $\mathbf{x}_t$
+   - $\boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)$ is the neural network's prediction of what that noise was, given only the noisy image $\mathbf{x}_t$ and the timestep $t`
+   
+   The loss is $\|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2`. The network essentially learns to answer: "Given this noisy image at this noise level, what noise was added?"
+
+5. **$\lambda(t)$ controls how much the model prioritizes learning to denoise at different noise levels.** Different timesteps correspond to different SNR regimes: early timesteps (low $t$) have little noise, late timesteps (high $t$) have lots of noise. The weight $\lambda(t)$ determines the relative importance of each regime in the total loss.
+   
+   Papers choose it differently because the optimal weighting depends on the application:
+   - **DDPM ($\lambda(t) = 1$)**: Equal weight everywhere — simple and works well in practice, though it overweights high-noise timesteps relative to the ELBO-derived weighting.
+   - **ELBO-derived $\lambda(t)$**: Theoretically optimal for maximizing the evidence lower bound, but produces noisier gradient estimates in practice.
+   - **EDM $\lambda(t)$**: Carefully designed based on SNR analysis to balance contribution from all noise levels, leading to better sample quality.
+   
+   This is one of the most impactful hyperparameter choices in diffusion model design.
+
+6. The five steps for one training sample:
+   1. **Sample a clean image**: $\mathbf{x}_0 \sim p_{\text{data}}$ (draw from the training dataset)
+   2. **Sample a random timestep**: $t \sim \text{Uniform}(1, T)$ (pick a random noise level)
+   3. **Sample noise**: $\boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$ (draw standard Gaussian noise)
+   4. **Create the noisy image**: $\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\,\mathbf{x}_0 + \sqrt{1-\bar{\alpha}_t}\,\boldsymbol{\epsilon}$ (add noise to the clean image using the closed-form formula)
+   5. **Compute the loss**: $L = \|\boldsymbol{\epsilon} - \boldsymbol{\epsilon}_\theta(\mathbf{x}_t, t)\|^2$ (pass $\mathbf{x}_t` and $t` through the network, compare predicted noise to true noise)
+   
+   Then backpropagate this loss to update $\theta`. Repeat for many samples.
+
 ---
 *Previous: [14-generative-model.md](14-generative-model.md) · Next: [16-reparameterization-trick.md](16-reparameterization-trick.md)*
