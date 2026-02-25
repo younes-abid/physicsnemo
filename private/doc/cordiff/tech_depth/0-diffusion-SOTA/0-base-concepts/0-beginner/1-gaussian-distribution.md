@@ -43,6 +43,56 @@ Where:
 - $\boldsymbol{\mu}$ is a **vector** of means (one per dimension)
 - $\boldsymbol{\Sigma}$ is the **covariance matrix** (describes spread and correlations between dimensions)
 
+### How is the Mean Vector $\boldsymbol{\mu}$ Calculated?
+
+Suppose you have $N$ data samples, each of dimension $d$ (e.g., for a 64×64 image, $d = 4096$). Write the $n$-th sample as $\mathbf{x}^{(n)} = (x_1^{(n)}, x_2^{(n)}, \dots, x_d^{(n)})$.
+
+The mean vector $\boldsymbol{\mu}$ is simply the **element-wise average** across all $N$ samples:
+
+$$\boldsymbol{\mu} = \frac{1}{N} \sum_{n=1}^{N} \mathbf{x}^{(n)}$$
+
+Written component by component, the $i$-th entry of $\boldsymbol{\mu}$ is:
+
+$$\mu_i = \frac{1}{N} \sum_{n=1}^{N} x_i^{(n)}, \qquad i = 1, \dots, d$$
+
+**Intuition:** $\mu_i$ is just the ordinary average of the $i$-th dimension across all samples. If dimension $i$ represents pixel #42, then $\mu_i$ is the average value of pixel #42 over your entire dataset.
+
+**Example (tiny 2D case):** Given three 2D data points $\mathbf{x}^{(1)}=(1, 4)$, $\mathbf{x}^{(2)}=(3, 2)$, $\mathbf{x}^{(3)}=(2, 6)$:
+
+$$\boldsymbol{\mu} = \frac{1}{3}\begin{pmatrix}1+3+2\\4+2+6\end{pmatrix} = \begin{pmatrix}2\\4\end{pmatrix}$$
+
+### How is the Covariance Matrix $\boldsymbol{\Sigma}$ Calculated?
+
+The covariance matrix is a $d \times d$ matrix where entry $(i, j)$ measures how dimensions $i$ and $j$ **vary together**:
+
+$$\Sigma_{ij} = \frac{1}{N} \sum_{n=1}^{N} (x_i^{(n)} - \mu_i)(x_j^{(n)} - \mu_j)$$
+
+Or equivalently in matrix form:
+
+$$\boldsymbol{\Sigma} = \frac{1}{N} \sum_{n=1}^{N} (\mathbf{x}^{(n)} - \boldsymbol{\mu})(\mathbf{x}^{(n)} - \boldsymbol{\mu})^\top$$
+
+> 📝 **Note:** Some references use $\frac{1}{N-1}$ instead of $\frac{1}{N}$ (Bessel's correction for unbiased estimation from finite samples). Both are valid; the difference vanishes for large $N$.
+
+**What each entry means:**
+
+| Entry | Formula | Meaning |
+|-------|---------|---------|
+| $\Sigma_{ii}$ (diagonal) | $\frac{1}{N}\sum_n (x_i^{(n)} - \mu_i)^2$ | **Variance** of dimension $i$ — how much dimension $i$ spreads around its mean |
+| $\Sigma_{ij}$ (off-diagonal, $i \neq j$) | $\frac{1}{N}\sum_n (x_i^{(n)} - \mu_i)(x_j^{(n)} - \mu_j)$ | **Covariance** between dimensions $i$ and $j$ — do they increase together (positive), move oppositely (negative), or behave independently (≈ 0)? |
+
+**Key properties of $\boldsymbol{\Sigma}$:**
+- It is **symmetric**: $\Sigma_{ij} = \Sigma_{ji}$
+- It is **positive semi-definite**: variances and combined spreads are never negative
+- Its size is $d \times d$, so for a 4096-dimensional image it would be a 4096 × 4096 matrix (≈16 million entries!) — this is one reason the isotropic simplification below is so important
+
+**Example (continuing the 2D case above):** With $\boldsymbol{\mu} = (2, 4)$:
+
+$$\boldsymbol{\Sigma} = \frac{1}{3}\begin{pmatrix}(1{-}2)^2 + (3{-}2)^2 + (2{-}2)^2 & (1{-}2)(4{-}4) + (3{-}2)(2{-}4) + (2{-}2)(6{-}4) \\ (1{-}2)(4{-}4) + (3{-}2)(2{-}4) + (2{-}2)(6{-}4) & (4{-}4)^2 + (2{-}4)^2 + (6{-}4)^2\end{pmatrix}$$
+
+$$= \frac{1}{3}\begin{pmatrix}2 & -2 \\ -2 & 8\end{pmatrix} = \begin{pmatrix}0.67 & -0.67 \\ -0.67 & 2.67\end{pmatrix}$$
+
+Reading this result: dimension 1 has variance 0.67, dimension 2 has variance 2.67 (more spread), and they have a **negative** covariance (−0.67), meaning when one goes up the other tends to go down.
+
 ### The Isotropic Case (Most Common in Diffusion)
 
 When all dimensions are **independent** and have the **same variance** $\sigma^2$:
