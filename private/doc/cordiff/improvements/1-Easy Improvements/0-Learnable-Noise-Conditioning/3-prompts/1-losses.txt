@@ -1,0 +1,27 @@
+super now look I was investigating corrdiff implementation
+I found it is a mix of many papers and theory
+I checked this mainly two scripts
+/home/younes.abid/git/physicsnemo/examples/weather/corrdiff/train.py
+for diffusion I noticed that it is using this loss function ResidualLoss
+that is implemented here
+/home/younes.abid/git/physicsnemo/physicsnemo/metrics/diffusion/loss.py
+
+now
+I want you to grasp all these
+I noticed that many loss function for diffusion are implemented but never used in any place in cordiff 
+(I am interested in cordiff for now)
+
+Here what I want you to do as  good wise teacher
+create a file 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/improvements/1-Easy Improvements/0-Learnable-Noise-Conditioning/0-background/01-what-is-noise-conditioning/02.3-corrdiff-loss.md
+Here you explain the used loss in diffusion for cordiff the ResidualLoss
+you explain it
+you make analogy and good explanation
+you provide math equations
+you link it to the correct paper and theory it is DDPM EDM VP VE or what
+then check the other implemented loss
+mention if they are used in cordiff or not and how to use them (must be small change in train code)
+similarly explain them and link them to the paper and equations
+
+
+

@@ -1,0 +1,75 @@
+ok so far I discovered that in the evolution of diffusion work there are many cornerstone paper
+and some works are very similar 
+and math is close and similar 
+annotation are different sometimes with same idea
+it is super confusing for me to follow up because I started mixing concepts and annotation and equations from many works
+
+So to make this clean and understandable
+I want you to clarify all of this in as many .md files as needed
+You will for example sort the cornerstone works in order 
+create one file 0-overview.md where you put briefly the name the paper the idea the date  of each corner stone work
+(I heard about DDPM, VP, VE, EDM, DDIM... and too many confusing things stable diffusion and too many works)
+then after sorting this 
+in wise order for a beginner student and as wise teacher you will explain all of this in many .md files
+maybe use chronology and pick first by first early works
+explain them 
+explain whole idea
+explain most important concepts and innovations in that work
+give the maths equations and explain them
+link this to previous work and how they are similar and how they are different.
+
+prepare all this documents under /home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA
+
+put as many .md files as you judge necessary
+explain as many works and paper as you judge necessary
+
+whe I finish reading one .md file
+I should be able as beginner in diffusion to learn general idea behind this paper and work and can explain it.
+able to describe flow of diffusion pipeline train and prediction and tell meaningful information like what is the goal the steps the math equation se used ...
+I should be able to list most important tequniques used in this work/paper and explain idea behind them
+I should be able to tell what make this paper diffent than previous work to it and what is its main contributions.
+I should be able to place this work in the whole landscape image of diffusion (tell which year, the innovation, the improvement, the goal and use case it focuses on...)
+I should be able to cite the name of the work and paper 
+I should be able to answer a list of knowledge check questions at the end of the .md file to check my understanding
+
+I perfectly understand that some works needs very long .md file to explain them 
+it is ok. 
+Note maybe first works needs longer .md files because we start explaining many things
+then maybe .md files become shorter or more focused because we will avoid extensivly re-explain already explained concept in previous .md files we will just mention them shortly and assume no deep explanation needed for them
+
+and finally as there are many common solid concepts like unchangeable standards and base common fo all diffusion 
+it is good idea to first create as many .md files for them under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts
+
+The idea we will have solid detailed concepts as small building bricks well explained each concept and idea in differnt .md file under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts
+put as many concepts and .md files as you judge needed here
+
+these concept will be our most important bricks to build my knowledge 
+they are the most important part
+solid understandable .md files here will make is super easy to understand any work and paper
+when we explain a paper or work then when we face a concept we can point to it from the 0-diffusion-SOTA/0-base-concepts/...md
+this will make less redundencies
+
+I knew some concepts are easy and atomic and can be explained in few lines (it is good to put them in seperate.md as we will refence them many times)
+some concepts are big and depends on other concepts and are like a networks between concepts. it is ok put them in different .md files and reference all other concepts they depends on
+try to sort the concepts following this logic
+basic small atomic concepts will be in seperate .md file the name of the .md will start by a number like 0- ...md 1-...md
+these concepts will be put under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/0-beginner
+some other concepts will draw small network of concept to be understood
+put them under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/1-intermediate
+some other concepts will draw big network of concepts to be understood put them under 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/1-advanced
+
+Note beginner does not mean they must be easy and no advanced math but it means they are more atomic and can be explained without needing big background knowledge
+it is like starting with beginner student
+
+So for now I gave you the whole road map of what I want to create 
+It will be like my own wiki SOTA that you will help me to build as wise teacher
+Start for now by creating this 
+/home/younes.abid/git/physicsnemo/private/doc/cordiff/tech_depth/0-diffusion-SOTA/0-base-concepts/0-beginner
+
+once you finish we will move to next task
+we will build them slowly slowly 
